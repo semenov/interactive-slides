@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Интерактивные презентации</title>
+  <meta name="description" content="Объяснения технических тем со схемами, которые можно трогать.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+</head>
+<body>
+<main class="home">
+  <header class="home-head">
+    <h1>Интерактивные презентации</h1>
+    <p class="lead">Технические темы со схемами, которые можно трогать: нажимайте кнопки, двигайте ползунки и смотрите, что происходит внутри.</p>
+  </header>
+
+  <ul class="talks">
+    <li>
+      <a class="talk" href="/go-channels/">
+        <span class="talk-art" aria-hidden="true">
+          <svg viewBox="0 0 80 40"><circle cx="9" cy="20" r="9" fill="#00add8"/><circle cx="71" cy="20" r="9" fill="#00add8"/><path d="M18 14h44M18 26h44" stroke="#fff" stroke-width="2"/><rect x="26" y="16" width="8" height="8" rx="1.5" fill="#fddd00"/><rect x="44" y="16" width="8" height="8" rx="1.5" fill="#fddd00"/></svg>
+        </span>
+        <span>
+          <h2>Горутины и каналы в Go</h2>
+          <p>Планировщик GMP, как устроен канал внутри, select, пул воркеров и типичные ошибки.</p>
+          <p class="talk-meta">15 слайдов, 7 интерактивных схем и 4 задачки</p>
+        </span>
+      </a>
+    </li>
+  </ul>
+
+  <footer class="home-foot">
+    <a href="https://github.com/semenov/interactive-slides">Исходники на GitHub</a>
+  </footer>
+</main>
+</body>
+</html>

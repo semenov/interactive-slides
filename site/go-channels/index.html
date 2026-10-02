@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Горутины и каналы в Go — интерактивная презентация</title>
+  <meta name="description" content="Как в Go устроены горутины, планировщик GMP, каналы, select и типичные паттерны — с интерактивными схемами.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-pipe" aria-hidden="true">
+      <span class="g">G1</span>
+      <span class="tube"><i></i><i></i><i></i></span>
+      <span class="g">G2</span>
+    </div>
+    <h1>Горутины и каналы в Go</h1>
+    <p class="lead">Как Go запускает тысячи конкурентных задач и как они передают друг другу данные. Внутри — схемы, которые можно трогать.</p>
+    <p class="note">Листайте стрелками ← → на клавиатуре, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Горутина — функция, запущенная конкурентно</h2>
+      <p class="lead">Слово <code>go</code> перед вызовом запускает функцию и сразу возвращает управление. Вызывающий код не ждёт её завершения.</p>
+<pre class="code"><code>
+func worker(id int, wg *sync.WaitGroup) {
+    defer wg.Done()
+    work(id)
+}
+
+func main() {
+    var wg sync.WaitGroup
+    for i := 1; i &lt;= 3; i++ {
+        wg.Add(1)
+        go worker(i, &amp;wg)
+    }
+    wg.Wait() // ждём, пока все вызовут Done
+}
+</code></pre>
+      <p class="note">Когда <code>main</code> возвращается, программа завершается вместе со всеми горутинами, даже недоделанными. Поэтому их нужно дождаться: через <code>sync.WaitGroup</code>, канал или <code>errgroup</code>.</p>
+    </div>
+    <div class="demo" data-demo="waitgroup"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Почему горутин может быть миллион</h2>
+      <ul class="points">
+        <li>Стек горутины начинается с 2 КБ и растёт по мере надобности: рантайм копирует его в больший. Поток ОС сразу резервирует стек фиксированного размера, обычно 1–8 МБ.</li>
+        <li>Переключение между горутинами делает рантайм Go в пространстве пользователя, без перехода в ядро.</li>
+        <li>Горутины не привязаны к потокам: рантайм раскладывает их по небольшому числу потоков ОС.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="cost"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Планировщик: G, M и P</h2>
+      <dl class="gmp-legend">
+        <dt><span class="gchip">G</span></dt><dd>Горутина: её стек, текущая инструкция и состояние.</dd>
+        <dt><span class="mchip">M</span></dt><dd>Поток ОС (machine). Именно он исполняет код.</dd>
+        <dt><span class="pchip">P</span></dt><dd>Процессор — право исполнять Go-код. Их ровно <code>GOMAXPROCS</code>, по умолчанию по числу ядер. У каждого P своя очередь готовых горутин.</dd>
+      </dl>
+      <p class="note">Если у P кончилась работа, он берёт горутину из глобальной очереди или крадёт половину чужой очереди (work stealing). Нажмите «Системный вызов»: горутина уходит в ядро вместе со своим M, а P сразу получает другой M и продолжает работу.</p>
+    </div>
+    <div class="demo" data-demo="gmp"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Канал без буфера — точка встречи</h2>
+<pre class="code"><code>
+ch := make(chan int)
+
+go func() { ch &lt;- 42 }() // отправка
+v := &lt;-ch                // получение
+</code></pre>
+      <p class="lead">Отправка блокирует горутину, пока кто-нибудь не придёт за значением. Получение блокирует, пока кто-нибудь не отправит.</p>
+      <p class="note">Передача происходит, только когда встретились оба. Поэтому небуферизованный канал не только передаёт данные, но и синхронизирует горутины. Попробуйте нажимать кнопки в разном порядке.</p>
+    </div>
+    <div class="demo" data-demo="unbuffered"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Буферизованный канал — очередь с лимитом</h2>
+      <p class="lead">Пока в буфере есть место, отправитель не ждёт. Буфер полон — отправитель засыпает. Буфер пуст — засыпает получатель.</p>
+      <p class="note">Под схемой — настоящие поля структуры канала из рантайма Go. Буфер кольцевой: индексы <code>sendx</code> и <code>recvx</code> бегают по кругу. Каждое нажатие — новая горутина, которая выполняет операцию.</p>
+    </div>
+    <div class="demo" data-demo="buffered"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Под капотом: runtime.hchan</h2>
+      <ul class="points">
+        <li><code>make(chan T)</code> выделяет <code>hchan</code> в куче и возвращает указатель. Копия переменной канала указывает на тот же канал.</li>
+        <li>Каждая операция берёт <code>lock</code>. Канал — это очередь под мьютексом плюс тесная работа с планировщиком.</li>
+        <li>Заблокированная горутина встаёт в <code>sendq</code> или <code>recvq</code> и снимается с P (<code>gopark</code>). Она не крутится в цикле и не тратит CPU.</li>
+        <li>Если получатель уже ждёт, отправитель копирует значение прямо в его стек, минуя буфер, и будит его (<code>goready</code>).</li>
+      </ul>
+    </div>
+<pre class="code"><code>
+type hchan struct {
+    qcount   uint           // элементов в буфере
+    dataqsiz uint           // cap(ch)
+    buf      unsafe.Pointer // кольцевой буфер
+    elemsize uint16
+    closed   uint32
+    elemtype *_type
+    sendx    uint           // куда писать
+    recvx    uint           // откуда читать
+    recvq    waitq          // спящие получатели
+    sendq    waitq          // спящие отправители
+    lock     mutex
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>nil, открытый, закрытый</h2>
+      <p class="lead">Что делает каждая операция в зависимости от состояния канала. Нажмите на клетку таблицы.</p>
+      <p class="note">Закрывает канал отправитель, и только когда отправлять больше нечего. Получатель узнаёт о закрытии через <code>v, ok := &lt;-ch</code> или когда завершается цикл <code>for v := range ch</code>.</p>
+    </div>
+    <div class="demo" data-demo="matrix"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>select — ждать несколько каналов сразу</h2>
+      <ul class="points">
+        <li><code>select</code> блокируется, пока хотя бы один <code>case</code> не сможет выполниться.</li>
+        <li>Если готовы несколько, выбирается случайный, чтобы ни один канал не голодал.</li>
+        <li><code>default</code> делает <code>select</code> неблокирующим, а <code>time.After</code> добавляет таймаут.</li>
+      </ul>
+      <p class="note">Включайте и выключайте готовность каналов. Если запустить <code>select</code>, когда ничего не готово, а потом включить канал, <code>select</code> проснётся.</p>
+    </div>
+    <div class="demo" data-demo="select"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Пул воркеров</h2>
+      <p class="lead">Несколько горутин читают задачи из одного канала. Каждую задачу получит ровно один воркер — раздачу работы делает сам канал.</p>
+<pre class="code"><code>
+func worker(jobs &lt;-chan int, results chan&lt;- int) {
+    for j := range jobs { // до close(jobs)
+        results &lt;- process(j)
+    }
+}
+
+jobs := make(chan int, 100)
+results := make(chan int, 100)
+for w := 0; w &lt; n; w++ {
+    go worker(jobs, results)
+}
+for j := 1; j &lt;= 12; j++ {
+    jobs &lt;- j
+}
+close(jobs)
+</code></pre>
+    </div>
+    <div class="demo" data-demo="pool"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что выведет программа?</h2>
+<pre class="code"><code>
+func main() {
+    ch := make(chan int)
+    ch &lt;- 1
+    fmt.Println(&lt;-ch)
+}
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">1</button>
+      <button class="opt">0</button>
+      <button class="opt" data-correct>fatal error: all goroutines are asleep - deadlock!</button>
+      <button class="opt">Ничего, программа зависнет навсегда</button>
+      <div class="explain" hidden>Канал без буфера: <code>ch &lt;- 1</code> ждёт получателя, но получать должна та же самая горутина, строкой ниже. Других горутин нет, и рантайм видит, что все спят, поэтому падает с deadlock. Исправить можно буфером <code>make(chan int, 1)</code> или отправкой из отдельной горутины.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что выведет программа?</h2>
+<pre class="code"><code>
+ch := make(chan int, 2)
+ch &lt;- 1
+ch &lt;- 2
+close(ch)
+
+for v := range ch {
+    fmt.Print(v)
+}
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt" data-correct>12</button>
+      <button class="opt">Ничего: канал уже закрыт</button>
+      <button class="opt">panic: receive from closed channel</button>
+      <button class="opt">120000… — бесконечные нули</button>
+      <div class="explain">Закрытие не стирает буфер. Из закрытого канала можно читать, пока в нём остались данные; после этого <code>range</code> видит <code>ok = false</code> и завершает цикл. Паники при чтении из закрытого канала не бывает — паникует только отправка.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что не так с этим кодом?</h2>
+<pre class="code"><code>
+func first(urls []string) string {
+    ch := make(chan string)
+    for _, u := range urls {
+        go func() { ch &lt;- fetch(u) }()
+    }
+    return &lt;-ch // берём самый быстрый ответ
+}
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">Гонка данных на переменной u</button>
+      <button class="opt">Deadlock при первом же вызове</button>
+      <button class="opt" data-correct>Все горутины, кроме первой, зависнут навсегда</button>
+      <button class="opt">Всё в порядке</button>
+      <div class="explain">Мы читаем из канала один раз. Остальные горутины навсегда заблокированы на <code>ch &lt;- …</code>: это утечка, и сборщик мусора их не уберёт. Исправление — буфер на все ответы: <code>make(chan string, len(urls))</code>, или отмена через <code>context</code>. Гонки на <code>u</code> нет: с Go 1.22 у каждой итерации своя переменная.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что выведет программа?</h2>
+<pre class="code"><code>
+var ch chan int // nil
+
+select {
+case v := &lt;-ch:
+    fmt.Println(v)
+default:
+    fmt.Println("пусто")
+}
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">0</button>
+      <button class="opt" data-correct>пусто</button>
+      <button class="opt">panic: nil channel</button>
+      <button class="opt">fatal error: deadlock</button>
+      <div class="explain">Чтение из nil-канала никогда не бывает готово, поэтому срабатывает <code>default</code>. Без <code>default</code> горутина заснула бы навсегда. Этим пользуются на практике: присвоить каналу <code>nil</code> — значит выключить его <code>case</code> в <code>select</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Коротко</h2>
+    <ul class="points summary">
+      <li>Горутина дешёвая, но не бесплатная. Всегда знайте, как и когда она завершится.</li>
+      <li>Канал без буфера синхронизирует, канал с буфером сглаживает всплески. Буфер не лечит дедлок, а только откладывает его.</li>
+      <li>Закрывает канал отправитель. Отправка в закрытый канал и повторный <code>close</code> — паника.</li>
+      <li>nil-канал блокирует навсегда. Это удобно, чтобы выключить <code>case</code> в <code>select</code>.</li>
+      <li><code>select</code> выбирает случайный из готовых <code>case</code>; <code>default</code> делает его неблокирующим.</li>
+      <li>Для отмены и таймаутов — <code>context.Context</code>. Чтобы защитить общий счётчик, <code>sync.Mutex</code> проще канала.</li>
+    </ul>
+    <blockquote class="proverb">Не общайтесь через разделяемую память — разделяйте память, общаясь.<cite>Go Proverbs, Роб Пайк</cite></blockquote>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+</body>
+</html>
