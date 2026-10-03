@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>PostgreSQL изнутри — интерактивная презентация</title>
+  <meta name="description" content="Как устроен PostgreSQL: память и диск, MVCC, VACUUM, WAL, индексы, планировщик, блокировки, пулы соединений, репликация, фейловер и бэкапы.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-page" aria-hidden="true">
+      <div class="hp-head">заголовок страницы</div>
+      <div class="hp-ptrs"><i></i><i></i><i></i><i></i><i></i><span>указатели →</span></div>
+      <div class="hp-free">свободное место</div>
+      <div class="hp-tuples"><span>← версии строк</span><i class="dead"></i><i></i><i class="dead"></i><i></i><i></i></div>
+      <div class="hp-size">8 КБ</div>
+    </div>
+    <div class="stack">
+      <h1>PostgreSQL изнутри</h1>
+      <p class="lead">Что лежит в памяти и что на диске, зачем нужны WAL и VACUUM, как работают индексы, где база упирается в потолок и как сделать, чтобы она не теряла данные.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Процессы, память, диск</h2>
+      <p class="lead">Postgres — это набор процессов ОС вокруг общей памяти. Каждое соединение — отдельный процесс. Все данные проходят через общий кэш страниц, а на диск попадают в двух местах: в журнал и в файлы данных.</p>
+      <p class="note">Нажмите на элемент схемы, чтобы узнать, что он делает.</p>
+    </div>
+    <div class="demo" data-demo="arch"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сколько памяти и на что</h2>
+      <ul class="points">
+        <li><code>shared_buffers</code> — общий кэш. Начинают с 25% RAM: больше обычно не нужно, ведь остальное всё равно кэширует ОС.</li>
+        <li><code>work_mem</code> выделяется на каждую сортировку и хеш в каждом запросе. 500 соединений × 64 МБ × несколько операций — и память кончилась.</li>
+        <li>Каждое соединение — процесс со своей памятью, даже когда простаивает.</li>
+      </ul>
+      <p class="note">Оценка худшего случая: все соединения одновременно выполняют запрос с двумя сортировками. В жизни так бывает редко — но именно тогда приходит OOM killer.</p>
+    </div>
+    <div class="demo" data-demo="memcalc"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Страница и версии строк (MVCC)</h2>
+      <p class="lead">Таблица — файл из страниц по 8 КБ. <code>UPDATE</code> не меняет строку на месте: он записывает новую версию, а старую помечает удалённой. У каждой версии есть <code>xmin</code> — кто создал — и <code>xmax</code> — кто удалил.</p>
+      <p class="note">Так читатели не блокируют писателей: каждая транзакция видит версии, актуальные на момент её снимка. Откройте долгую транзакцию, сделайте несколько UPDATE и запустите VACUUM — старые версии он убрать не сможет.</p>
+    </div>
+    <div class="demo" data-demo="mvcc"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>VACUUM и раздувание таблиц</h2>
+      <ul class="points">
+        <li>VACUUM находит мёртвые версии, которые уже никому не видны, и отмечает их место свободным в карте свободного места. Файл при этом не уменьшается.</li>
+        <li>Autovacuum запускается, когда мёртвых строк больше 50 + 20% таблицы. Для больших таблиц это поздно — порог настраивают для каждой таблицы отдельно.</li>
+        <li>Если чистка не успевает или её держит долгая транзакция, таблица разрастается. Вернуть место может только перезапись: <code>VACUUM FULL</code> (блокирует таблицу целиком) или <code>pg_repack</code> (почти без блокировки).</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="bloat"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Переполнение счётчика транзакций</h2>
+      <p class="lead">Номер транзакции 32-битный, а сравнивать «раньше — позже» можно только в окне ~2,1 млрд. Чтобы старые строки не оказались вдруг «из будущего», VACUUM замораживает их: помечает видимыми для всех.</p>
+      <p class="note">Если заморозка не успевает — из-за выключенного автовакуума, долгих транзакций или забытого слота репликации, — база в итоге перестаёт принимать запись. Следите за <code>age(datfrozenxid)</code>.</p>
+    </div>
+    <div class="demo" data-demo="wraparound"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Буферный кэш</h2>
+      <p class="lead">Любая страница сначала загружается в <code>shared_buffers</code>. Когда места нет, алгоритм «часы» ищет жертву: стрелка идёт по кругу, уменьшая счётчик использования, и вытесняет первую страницу со счётчиком 0. Популярные страницы держатся в памяти.</p>
+      <p class="note">Пока рабочий набор помещается в память, почти все чтения — попадания. Увеличьте его — и база начнёт читать с диска. Большое последовательное чтение использует маленький кольцевой буфер, чтобы не выбить из кэша всё полезное.</p>
+    </div>
+    <div class="demo" data-demo="buffers"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>WAL: сначала журнал, потом данные</h2>
+      <p class="lead">Изменение страницы сначала описывается в журнале предзаписи (WAL). При <code>COMMIT</code> на диск сбрасывается только журнал — последовательная запись, быстро. Сами страницы данных остаются «грязными» в памяти и пишутся позже.</p>
+      <p class="note">После сбоя Postgres берёт последнюю контрольную точку и проигрывает журнал. Выключите <code>synchronous_commit</code> — коммит станет быстрее, но при сбое можно потерять последние подтверждённые транзакции. Целостность базы при этом не пострадает.</p>
+    </div>
+    <div class="demo" data-demo="wal"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Контрольные точки</h2>
+      <ul class="points">
+        <li>Checkpoint сбрасывает все грязные страницы на диск. После него журнал до этой точки для восстановления не нужен.</li>
+        <li>Редкие контрольные точки: меньше записи, но дольше восстановление после сбоя.</li>
+        <li>Частые контрольные точки: больше записи. После каждой первое изменение страницы пишет в WAL её целиком (full page writes), и объём журнала растёт в разы.</li>
+        <li>Если контрольные точки случаются из-за <code>max_wal_size</code>, а не по времени, — его пора увеличить. Это видно в <code>log_checkpoints</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+# postgresql.conf — разумная отправная точка
+checkpoint_timeout = 15min
+max_wal_size = 16GB
+checkpoint_completion_target = 0.9  # размазать запись
+wal_compression = lz4
+
+shared_buffers = 8GB          # ~25% RAM
+effective_cache_size = 24GB   # shared_buffers + кэш ОС
+work_mem = 32MB
+maintenance_work_mem = 1GB
+random_page_cost = 1.1        # для SSD
+</code></pre>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>B-дерево</h2>
+      <p class="lead">Индекс — отдельный файл из тех же страниц по 8 КБ. В листьях лежат ключи по порядку и ссылки на строки в таблице (ctid). Внутренние страницы направляют поиск. Листья связаны друг с другом, поэтому диапазоны читаются подряд.</p>
+      <p class="note">Здесь в узле до трёх ключей. В настоящей странице их сотни, поэтому дерево над миллиардом строк — всего 4–5 уровней. Вставьте ключи и посмотрите, как узлы делятся.</p>
+    </div>
+    <div class="demo" data-demo="btree"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Составной индекс: порядок колонок важен</h2>
+<pre class="code"><code class="lang-sql">
+CREATE INDEX ON orders (user_id, created_at);
+</code></pre>
+      <p class="lead">Записи отсортированы сначала по <code>user_id</code>, внутри — по <code>created_at</code>. Индекс помогает, когда запрос сужает поиск слева направо.</p>
+      <p class="note">Выберите запрос — подсветится, какую часть индекса придётся прочитать.</p>
+    </div>
+    <div class="demo" data-demo="composite"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Какие бывают индексы</h2>
+    <div class="ixtypes" role="table">
+      <div class="ixt" role="row"><b role="rowheader">B-tree</b><span role="cell">Равенство, диапазоны, сортировка, <code>LIKE 'abc%'</code>. По умолчанию и в 90% случаев.</span></div>
+      <div class="ixt" role="row"><b role="rowheader">GIN</b><span role="cell"><code>jsonb</code>, массивы, полнотекстовый поиск, <code>pg_trgm</code> для <code>LIKE '%abc%'</code>. Быстро ищет, медленнее обновляется.</span></div>
+      <div class="ixt" role="row"><b role="rowheader">GiST</b><span role="cell">Геоданные (PostGIS), диапазоны, поиск ближайших, ограничения-исключения.</span></div>
+      <div class="ixt" role="row"><b role="rowheader">BRIN</b><span role="cell">Огромные таблицы, где значение связано с физическим порядком, например время вставки. Индекс в тысячи раз меньше B-tree.</span></div>
+      <div class="ixt" role="row"><b role="rowheader">Частичный</b><span role="cell"><code>WHERE status = 'active'</code> — индексирует только нужные строки.</span></div>
+      <div class="ixt" role="row"><b role="rowheader">По выражению</b><span role="cell"><code>ON users (lower(email))</code> — для запросов с тем же выражением.</span></div>
+      <div class="ixt" role="row"><b role="rowheader">Покрывающий</b><span role="cell"><code>INCLUDE (amount)</code> — запрос берёт всё из индекса (index-only scan), если таблица недавно чистилась VACUUM.</span></div>
+    </div>
+    <p class="note">Каждый индекс замедляет запись. Если <code>UPDATE</code> не трогает индексированные колонки и на странице есть место, Postgres делает HOT-обновление и индексы не трогает вовсе. Лишний индекс на часто обновляемой колонке это ломает.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Планировщик выбирает по стоимости</h2>
+      <p class="lead">Для каждого плана Postgres оценивает стоимость: страницы последовательного и случайного чтения плюс обработка строк. Оценки строк берутся из статистики, которую собирает <code>ANALYZE</code>.</p>
+      <p class="note">Индекс выгоден, когда запрос выбирает малую долю строк. На SSD случайное чтение почти так же дёшево, как последовательное: снизьте <code>random_page_cost</code> — и индекс выигрывает дольше. Неверная статистика — главная причина внезапно плохих планов.</p>
+    </div>
+    <div class="demo" data-demo="planner"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Очередь блокировок: как миграция кладёт прод</h2>
+      <p class="lead"><code>ALTER TABLE</code> берёт эксклюзивную блокировку. Пока идёт долгий запрос, ALTER ждёт — а все новые запросы к таблице выстраиваются в очередь за ним, хотя друг другу не мешают.</p>
+<pre class="code"><code class="lang-sql">
+SET lock_timeout = '2s';
+ALTER TABLE orders ADD COLUMN note text;
+-- не дождался — ошибка, повторить позже
+</code></pre>
+      <p class="note">Запустите долгий отчёт, затем ALTER. Потом повторите с <code>lock_timeout</code>.</p>
+    </div>
+    <div class="demo" data-demo="locks"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Зачем PgBouncer</h2>
+      <p class="lead">Соединение с Postgres — это процесс с памятью, даже когда он ничего не делает. А у приложения 20 подов по 50 соединений в пуле — и большинство из них простаивает.</p>
+      <p class="note">Пулер держит тысячи клиентских соединений и пропускает их через несколько десятков серверных: соединение с базой выдаётся только на время транзакции. Больше активных запросов, чем ядер, всё равно не ускоряет работу — они начинают мешать друг другу.</p>
+    </div>
+    <div class="demo" data-demo="pool"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Режимы пулера</h2>
+    <div class="modes">
+      <div class="mode">
+        <h3>session</h3>
+        <p>Серверное соединение закреплено за клиентом до отключения. Совместимо со всем, но почти не экономит соединения.</p>
+      </div>
+      <div class="mode main">
+        <h3>transaction</h3>
+        <p>Соединение выдаётся на время транзакции. Основной режим. Между транзакциями клиент может попасть в другой процесс, поэтому состояние сессии терять нельзя:</p>
+        <ul>
+          <li><code>SET</code> → <code>SET LOCAL</code> внутри транзакции</li>
+          <li>сессионные advisory-блокировки, <code>LISTEN</code>, временные таблицы — не работают</li>
+          <li>prepared statements — только с PgBouncer 1.21+ (<code>max_prepared_statements</code>)</li>
+        </ul>
+      </div>
+      <div class="mode">
+        <h3>statement</h3>
+        <p>Соединение на каждый запрос. Транзакции из нескольких запросов запрещены. Нужен редко.</p>
+      </div>
+    </div>
+    <p class="note">Альтернативы PgBouncer: Odyssey, PgCat, Supavisor. Пул внутри приложения всё равно нужен — он держит соединения до пулера.</p>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Репликация</h2>
+      <ul class="points">
+        <li>Физическая потоковая репликация: primary отправляет поток WAL, реплики его проигрывают. Реплика — точная копия всего кластера, только для чтения.</li>
+        <li>Асинхронная (по умолчанию): коммит не ждёт реплику. Быстро, но при падении primary последние транзакции могут не успеть доехать.</li>
+        <li>Синхронная: коммит ждёт подтверждения реплики. Ноль потерь — ценой задержки и риска встать, если реплика пропала. Ставьте кворум: <code>ANY 1 (r1, r2)</code>.</li>
+        <li>Логическая репликация передаёт изменения отдельных таблиц и работает между версиями — ею делают обновления почти без простоя.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="replication"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Фейловер без раздвоения мозга</h2>
+      <p class="lead">Postgres сам не переключает мастера. Это делает Patroni: узлы договариваются через etcd (или Consul, ZooKeeper, Kubernetes). Мастер — тот, кто держит ключ лидера и продлевает его, пока жив.</p>
+      <p class="note">Ключ не продлён за TTL — реплики выбирают самую свежую и повышают её. Мастер, отрезанный от etcd, сам переходит в режим только чтения: двух мастеров не будет. Вернувшийся узел догоняет нового лидера через <code>pg_rewind</code>. Клиенты находят мастера через HAProxy или <code>target_session_attrs=read-write</code>.</p>
+    </div>
+    <div class="demo" data-demo="failover"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Бэкап и восстановление на момент времени</h2>
+      <p class="lead">Физический бэкап — копия файлов кластера — плюс непрерывный архив WAL. Восстановление: развернуть последний бэкап до нужного момента и проиграть журнал до нужной секунды.</p>
+<pre class="code"><code class="lang-plain">
+restore_command = 'pgbackrest archive-get %f "%p"'
+recovery_target_time = '2026-10-03 14:59:00'
+recovery_target_action = 'promote'
+</code></pre>
+      <p class="note">В субботу в 15:00 кто-то выполнил <code>DROP TABLE</code>. Подвиньте ползунок и выберите момент восстановления.</p>
+    </div>
+    <div class="demo" data-demo="pitr"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Бэкапы: правила</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Делайте</h3>
+        <ul>
+          <li>Физический бэкап и архив WAL через pgBackRest, WAL-G или Barman: восстановление на любую секунду.</li>
+          <li>Копии в другом месте: другой дата-центр или облако, с шифрованием.</li>
+          <li>Регулярно и автоматически восстанавливайте бэкап на тестовый сервер. Непроверенный бэкап — не бэкап.</li>
+          <li>Следите за архивацией: если <code>archive_command</code> падает, <code>pg_wal</code> растёт, пока не кончится диск.</li>
+          <li>Отложенная реплика (<code>recovery_min_apply_delay = '4h'</code>) быстро спасает от ошибки человека.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не делайте</h3>
+        <ul>
+          <li>Не считайте реплику бэкапом: <code>DROP TABLE</code> доедет до неё за миллисекунды.</li>
+          <li>Не копируйте каталог данных работающей базы через <code>cp</code> или <code>rsync</code> — получится несогласованная копия.</li>
+          <li>Не полагайтесь только на <code>pg_dump</code> для большой базы: восстановление занимает часы, а всё между дампами теряется.</li>
+          <li>Не храните бэкапы на том же сервере или диске.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Где узкие места</h2>
+      <p class="lead">Postgres упирается в несколько типичных потолков: соединения, диск, журнал, мусор от MVCC, блокировки и плохие планы. Запись идёт только через один primary — её масштабируют вертикально или разбиением данных.</p>
+      <p class="note">Выберите симптом — увидите причину, как её проверить и что делать.</p>
+    </div>
+    <div class="demo" data-demo="symptoms"></div>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что мониторить</h2>
+      <ul class="points">
+        <li>Самые тяжёлые запросы по суммарному времени — <code>pg_stat_statements</code>.</li>
+        <li>Долгие транзакции и <code>idle in transaction</code>: они держат блокировки и мешают VACUUM.</li>
+        <li>Мёртвые строки и время последнего автовакуума по таблицам.</li>
+        <li>Отставание реплик, размер <code>pg_wal</code> и неактивные слоты репликации.</li>
+        <li>Возраст самой старой транзакции: <code>age(datfrozenxid)</code>.</li>
+      </ul>
+      <p class="note">Страховка от зависших сессий: <code>idle_in_transaction_session_timeout</code> и <code>statement_timeout</code>.</p>
+    </div>
+<pre class="code"><code class="lang-sql">
+-- самые тяжёлые запросы
+SELECT query, calls, total_exec_time, mean_exec_time
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC LIMIT 10;
+
+-- долгие и зависшие транзакции
+SELECT pid, state, now() - xact_start AS age, query
+FROM pg_stat_activity
+WHERE xact_start IS NOT NULL ORDER BY age DESC;
+
+-- мёртвые строки
+SELECT relname, n_live_tup, n_dead_tup, last_autovacuum
+FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC LIMIT 10;
+
+-- отставание реплик
+SELECT application_name, replay_lag FROM pg_stat_replication;
+</code></pre>
+  </div>
+</section>
+
+<!-- 23 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Из большой таблицы удалили 90% строк через <code>DELETE</code> и дождались autovacuum. Что стало с размером файла на диске?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Уменьшился примерно в 10 раз</button>
+      <button class="opt text" data-correct>Почти не изменился</button>
+      <button class="opt text">Уменьшится после ближайшего CHECKPOINT</button>
+      <button class="opt text">Вырос из-за записи в WAL</button>
+      <div class="explain">VACUUM отмечает место свободным для новых строк, но файл не сжимает: обрезаются только пустые страницы в самом конце. Чтобы вернуть место ОС, таблицу перезаписывают: <code>VACUUM FULL</code> (с эксклюзивной блокировкой) или <code>pg_repack</code>. Удалять много строк удобнее, если таблица разбита на партиции: старую партицию просто удаляют.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 24 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сессия уже 6 часов в состоянии <code>idle in transaction</code>: открыла транзакцию, сделала запрос и ничего не делает. Чем это плохо?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Ничем: она же ничего не делает</button>
+      <button class="opt text">Занимает одно соединение, и только</button>
+      <button class="opt text" data-correct>Мешает VACUUM чистить мёртвые строки во всей базе и держит свои блокировки</button>
+      <button class="opt text">Блокирует запись во все таблицы</button>
+      <div class="explain">Пока транзакция открыта, её снимок может понадобиться, и VACUUM не удаляет версии строк новее него — во всех таблицах. Таблицы раздуваются. Блокировки, которые транзакция успела взять, тоже не отпускаются. Лечится <code>idle_in_transaction_session_timeout</code> и исправлением кода, который забывает COMMIT.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 25 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">У primary одна синхронная реплика: <code>synchronous_standby_names = 'r1'</code>. Реплика упала. Что будет с записью?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Primary продолжит работать как с асинхронной репликой</button>
+      <button class="opt text" data-correct>Коммиты зависнут, пока реплика не вернётся или не поменяют настройку</button>
+      <button class="opt text">Primary остановится, чтобы не потерять данные</button>
+      <button class="opt text">Реплику автоматически заменит другая</button>
+      <div class="explain">Синхронный коммит ждёт подтверждения от реплики, и Postgres честно ждёт. Поэтому синхронных реплик ставят минимум две с кворумом: <code>ANY 1 (r1, r2)</code> — коммит ждёт любую одну из них, и падение одной реплики запись не останавливает.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 26 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Память: <code>shared_buffers</code> — общий кэш, остальное кэширует ОС. <code>work_mem</code> умножается на число операций и соединений.</li>
+      <li>Надёжность держится на WAL: коммит — это fsync журнала, а не файлов данных.</li>
+      <li>MVCC оставляет мусор. Следите, чтобы autovacuum успевал, и не держите долгих транзакций.</li>
+      <li>Индекс помогает, когда запрос выбирает мало строк и условия совпадают с порядком колонок. Смотрите <code>EXPLAIN (ANALYZE, BUFFERS)</code>.</li>
+      <li>Соединения дорогие — ставьте пулер. Миграции — с <code>lock_timeout</code>.</li>
+      <li>Реплика — для отказоустойчивости и чтения, фейловер — через Patroni, бэкап — физический с архивом WAL и регулярной проверкой восстановления.</li>
+    </ul>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-ops.js"></script>
+</body>
+</html>

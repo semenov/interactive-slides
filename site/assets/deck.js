@@ -28,7 +28,7 @@
 
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const GO_KW = 'func|go|chan|select|case|default|for|range|return|var|const|make|close|if|else|struct|type|package|import|defer|len|cap|panic|nil|true|false|uint|uint16|uint32|int|string|bool';
-  const SQL_KW = 'select|from|where|and|or|not|insert|into|values|update|set|delete|begin|commit|rollback|create|table|index|on|using|check|primary|key|references|group|by|order|limit|for|skip|locked|returning|as|join|count|sum|null|now|interval|explain|analyze|engine|mergetree|like';
+  const SQL_KW = 'select|from|where|and|or|not|insert|into|values|update|set|delete|begin|commit|rollback|create|table|index|on|using|check|primary|key|references|group|by|order|limit|for|skip|locked|returning|as|join|count|sum|null|now|interval|explain|analyze|engine|mergetree|like|desc|asc|is|in|alter|add|column|drop|vacuum|full|with|include|exists|distinct|case|when|then|else|end|true|false|between';
   const RULES = {
     go: new RegExp(String.raw`(\/\/.*$)|("(?:[^"\\\n]|\\.)*")|(&lt;-)|\b(` + GO_KW + String.raw`)\b|\b(\d+)\b`, 'gm'),
     sql: new RegExp(String.raw`(--.*$)|('(?:[^'\n])*')|(&lt;-)|\b(` + SQL_KW + String.raw`)\b|\b(\d+)\b`, 'gmi'),

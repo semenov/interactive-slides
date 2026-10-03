@@ -4,5 +4,6 @@
 
 - [Горутины и каналы в Go](https://slides.semenov.ai/go-channels/)
 - [Серверные технологии: что для чего](https://slides.semenov.ai/backend-stack/)
+- [PostgreSQL изнутри](https://slides.semenov.ai/postgres-internals/)
 
 Статический сайт без сборки. Локально: `python3 -m http.server -d site 8000`. Деплой: `ship`.

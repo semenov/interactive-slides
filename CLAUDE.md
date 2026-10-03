@@ -7,7 +7,8 @@ Content language: Russian.
 
 - `site/index.html` — home page, a hand-written list of presentations (`.talks`). Add an `<li>` for every new presentation.
 - `site/assets/` — shared: `base.css` (tokens, buttons, code, home page), `deck.css` + `deck.js` (slide engine),
-  `kit.css` (demo building blocks: `.demo`, `.controls`, `.log`, `.val`, `.track`, `.slider`, `.toggle`, quiz).
+  `kit.css` (demo building blocks: `.demo`, `.controls`, `.log`, `.val`, `.track`, `.slider`, `.toggle`, quiz,
+  `.btn.small`/`.btn.sel`, `.tech` chip, `.stats`, `.fit` yes/no columns, `.summary`/`.proverb`).
   Accent colour comes from `--accent`/`--accent-deep`/`--accent-soft` (default Go blue; a deck can override per slide).
 - `site/<slug>/` — one presentation per folder → URL `/<slug>/`, slides deep-linked as `#N`.
   `index.html` (slides), `demos.js` (interactive parts), `style.css`.
@@ -28,6 +29,7 @@ Content language: Russian.
 
 - `go-channels` — горутины и каналы в Go.
 - `backend-stack` — PostgreSQL, Redis, RabbitMQ, Kafka, Elasticsearch, ClickHouse, S3: когда брать и когда нет. Tech colours via `.t-pg`, `.t-redis`, … classes.
+- `postgres-internals` — память/диск, MVCC, VACUUM, WAL, индексы, планировщик, блокировки, пулер, репликация, фейловер, бэкапы. Demos split into `demos.js` (internals) and `demos-ops.js` (operations).
 
 ## Rules
 
