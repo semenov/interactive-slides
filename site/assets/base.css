@@ -12,6 +12,9 @@
   --value: #fddd00;
   --ok: #00a29c;
   --ok-soft: #d4f0ee;
+  --accent: var(--go);
+  --accent-deep: var(--go-deep);
+  --accent-soft: var(--go-soft);
   --font: "Golos Text", system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --r-s: 6px;

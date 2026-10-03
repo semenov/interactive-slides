@@ -3,30 +3,8 @@
   const { h, highlight } = Deck;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
-  // Russian plural: plural(5, ['горутина', 'горутины', 'горутин'])
-  function plural(n, forms) {
-    const a = Math.abs(n) % 100, b = a % 10;
-    if (a > 10 && a < 20) return forms[2];
-    if (b > 1 && b < 5) return forms[1];
-    if (b === 1) return forms[0];
-    return forms[2];
-  }
+  const { plural, rafLoop } = Deck;
   const G_FORMS = ['горутина', 'горутины', 'горутин'];
-
-  // requestAnimationFrame loop with dt in seconds; pausing freezes simulated time.
-  function rafLoop(fn) {
-    let id = 0, last = 0;
-    const frame = t => {
-      const dt = Math.min(0.05, (t - last) / 1000);
-      last = t;
-      fn(dt);
-      id = requestAnimationFrame(frame);
-    };
-    return {
-      start() { if (!id) { last = performance.now(); id = requestAnimationFrame(frame); } },
-      stop() { cancelAnimationFrame(id); id = 0; },
-    };
-  }
 
   const chip = (text, cls = '') => `<span class="gchip ${cls}">${text}</span>`;
   const val = v => `<span class="val">${v}</span>`;
@@ -763,22 +741,5 @@
 
     reset();
     return loop;
-  });
-
-  // ---------------------------------------------------------------- quiz
-  Deck.demo('quiz', root => {
-    const explain = root.querySelector('.explain');
-    const opts = [...root.querySelectorAll('.opt')];
-    explain.hidden = true;
-    opts.forEach(b => b.addEventListener('click', () => {
-      opts.forEach(o => {
-        o.disabled = true;
-        if (o.hasAttribute('data-correct')) o.classList.add('right');
-      });
-      if (!b.hasAttribute('data-correct')) b.classList.add('wrong');
-      explain.hidden = false;
-      explain.classList.toggle('missed', !b.hasAttribute('data-correct'));
-    }));
-    return {};
   });
 })();

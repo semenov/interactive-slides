@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Серверные технологии: что для чего — интерактивная презентация</title>
+  <meta name="description" content="PostgreSQL, Redis, RabbitMQ, Kafka, Elasticsearch, ClickHouse и S3: для каких задач нужны и для каких нет. С интерактивными схемами.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="rack" aria-hidden="true">
+      <div class="unit t-pg"><b>PostgreSQL</b><span>данные</span></div>
+      <div class="unit t-redis"><b>Redis</b><span>кэш</span></div>
+      <div class="unit t-rabbit"><b>RabbitMQ</b><span>задачи</span></div>
+      <div class="unit t-kafka"><b>Kafka</b><span>события</span></div>
+      <div class="unit t-es"><b>Elasticsearch</b><span>поиск</span></div>
+      <div class="unit t-ch"><b>ClickHouse</b><span>аналитика</span></div>
+      <div class="unit t-s3"><b>S3</b><span>файлы</span></div>
+    </div>
+    <div class="stack">
+      <h1>Серверные технологии: что для чего</h1>
+      <p class="lead">Семь систем, из которых собирают бэкенд. Для каждой — как она устроена, когда её брать и когда она только помешает.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как это выглядит вместе</h2>
+      <p class="lead">Типичный бэкенд: приложение без состояния и несколько хранилищ вокруг, у каждого своя работа.</p>
+      <p class="note">Нажмите на блок схемы, чтобы узнать, зачем он нужен. Не каждому проекту нужны все семь: многие живут на одном Postgres годами.</p>
+    </div>
+    <div class="demo" data-demo="map"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide t-pg">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">PostgreSQL</span>
+      <h2>Транзакция: всё или ничего</h2>
+      <p class="lead">Реляционная база — источник правды для данных бизнеса. Её главное свойство — транзакции: несколько изменений применяются вместе или не применяются вовсе.</p>
+<pre class="code"><code class="lang-sql">
+BEGIN;
+UPDATE accounts SET balance = balance - 30
+  WHERE name = 'Алиса';
+UPDATE accounts SET balance = balance + 30
+  WHERE name = 'Боб';
+COMMIT;
+</code></pre>
+      <p class="note">Уроните сервер посреди перевода — с транзакцией и без. А если переводить, пока у Алисы не кончатся деньги, сработает ограничение <code>CHECK (balance &gt;= 0)</code>.</p>
+    </div>
+    <div class="demo" data-demo="tx"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide t-pg">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">PostgreSQL</span>
+      <h2>Индекс: найти строку, не читая всю таблицу</h2>
+      <p class="lead">Без индекса запрос <code>WHERE user_id = 42</code> перебирает каждую строку. B-дерево находит нужную за несколько чтений, даже среди миллиардов строк.</p>
+<pre class="code"><code class="lang-sql">
+CREATE INDEX orders_user_idx ON orders (user_id);
+
+EXPLAIN SELECT * FROM orders WHERE user_id = 42;
+-- Index Scan using orders_user_idx on orders
+</code></pre>
+      <p class="note">У индекса есть цена: он занимает место и замедляет каждую вставку и обновление, ведь его тоже нужно менять. Индексируйте колонки, по которым действительно ищете.</p>
+    </div>
+    <div class="demo" data-demo="index"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide t-pg">
+  <div class="slide-inner">
+    <span class="tech">PostgreSQL</span>
+    <h2>Когда брать PostgreSQL</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Основные данные: пользователи, заказы, деньги — всё, где важна целостность.</li>
+          <li>Связанные сущности и сложные запросы с <code>JOIN</code>, фильтрами и сортировкой.</li>
+          <li>Изменения, которые должны примениться вместе: транзакции.</li>
+          <li>Когда не знаете, что выбрать. Postgres умеет JSON (<code>jsonb</code>), полнотекстовый поиск, геоданные (PostGIS) и простые очереди.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Аналитика по миллиардам строк на лету. <span class="alt">Лучше ClickHouse</span></li>
+          <li>Файлы и большие бинарные данные. <span class="alt">Лучше S3</span></li>
+          <li>Сотни тысяч событий в секунду, которые читают несколько систем. <span class="alt">Лучше Kafka</span></li>
+          <li>Сотни тысяч чтений в секунду одних и тех же горячих данных. <span class="alt">Поставьте перед ним Redis</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide t-redis">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">Redis</span>
+      <h2>Данные в памяти: ответ за доли миллисекунды</h2>
+      <p class="lead">Redis хранит ключи и значения в оперативной памяти. Классическое применение — кэш перед базой: прочитали из Postgres один раз, а следующие запросы получают готовый ответ из памяти.</p>
+<pre class="code"><code class="lang-plain">
+GET product:1             → (nil), промах
+SELECT … FROM products    → 30 мс
+SET product:1 "…" EX 8    → живёт 8 секунд
+GET product:1             → попадание, 0,4 мс
+</code></pre>
+      <p class="note">Самое сложное в кэше — инвалидация. Поднимите цену кофе: пока ключ жив, пользователи видят старую цену. Включите удаление ключа при изменении — или терпите устаревшие данные до конца TTL.</p>
+    </div>
+    <div class="demo" data-demo="cache"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide t-redis">
+  <div class="slide-inner">
+    <span class="tech">Redis</span>
+    <h2>Когда брать Redis</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Кэш перед медленной базой или внешним API.</li>
+          <li>Сессии, токены, одноразовые коды — всё, что должно само исчезнуть по TTL.</li>
+          <li>Счётчики и ограничение частоты запросов: <code>INCR</code> атомарен.</li>
+          <li>Рейтинги (sorted set), распределённые блокировки, pub/sub для уведомлений.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Единственное хранилище важных данных: сохранение на диск есть, но гарантии слабее, чем у базы. <span class="alt">Лучше PostgreSQL</span></li>
+          <li>Данные, которые не помещаются в оперативную память.</li>
+          <li>Сложные запросы: нет <code>JOIN</code> и произвольных фильтров, только доступ по ключу.</li>
+          <li>Надёжная очередь задач с подтверждениями и повторами. <span class="alt">Лучше RabbitMQ</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide t-rabbit">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">RabbitMQ</span>
+      <h2>Очередь задач с подтверждениями</h2>
+      <p class="lead">Приложение не делает долгую работу само, а публикует сообщение. Брокер раскладывает его по очередям, воркеры забирают сообщения и подтверждают обработку (ack). После ack сообщение удаляется.</p>
+<pre class="code"><code class="lang-plain">
+exchange "events" (topic):
+  order.*      → очередь «склад»
+  order.paid   → очередь «письма»
+  user.signup  → очередь «письма»
+</code></pre>
+      <p class="note">Выключите воркер посреди обработки: сообщение без ack вернётся в очередь и достанется снова. Поэтому обработчик должен быть идемпотентным: повторная обработка не должна, например, дважды списать деньги.</p>
+    </div>
+    <div class="demo" data-demo="rabbit"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide t-rabbit">
+  <div class="slide-inner">
+    <span class="tech">RabbitMQ</span>
+    <h2>Когда брать RabbitMQ</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Фоновые задачи: письма, генерация PDF, обработка картинок.</li>
+          <li>Каждое сообщение нужно гарантированно обработать: подтверждения, повторы, очередь для неудачных сообщений (dead letter).</li>
+          <li>Гибкая маршрутизация: одно событие попадает в разные очереди по ключу.</li>
+          <li>Сглаживание пиков: очередь копится, воркеры спокойно её разбирают.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Нужно перечитать историю: после ack сообщения больше нет. <span class="alt">Лучше Kafka</span></li>
+          <li>Огромный поток событий для многих независимых читателей. <span class="alt">Лучше Kafka</span></li>
+          <li>Пара фоновых задач в маленьком проекте: таблица в Postgres и <code>FOR UPDATE SKIP LOCKED</code> часто справляются. <span class="alt">Хватит PostgreSQL</span></li>
+          <li>Клиент ждёт ответа прямо сейчас. <span class="alt">Проще обычный HTTP-вызов</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide t-kafka">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">Kafka</span>
+      <h2>Журнал событий, который можно перечитать</h2>
+      <p class="lead">Kafka не раздаёт сообщения, а дописывает их в конец журнала — топика. Каждая группа потребителей сама помнит, до какого места дочитала (offset). Чтение ничего не удаляет: события хранятся заданное время (retention).</p>
+      <p class="note">Топик делится на партиции — так Kafka масштабируется на миллионы событий в секунду. Порядок гарантирован только внутри партиции, поэтому события одного заказа отправляют с одним ключом.</p>
+    </div>
+    <div class="demo" data-demo="kafka"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide t-kafka">
+  <div class="slide-inner">
+    <span class="tech">Kafka</span>
+    <h2>Когда брать Kafka</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Поток событий, который читают несколько независимых систем.</li>
+          <li>Историю нужно хранить и перечитывать: новый сервис прочтёт события с самого начала.</li>
+          <li>Очень большой поток: Kafka масштабируется добавлением партиций и брокеров.</li>
+          <li>Поток изменений из базы (CDC), сбор логов и метрик, event sourcing.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Очередь задач с повтором отдельных сообщений и приоритетами. <span class="alt">Лучше RabbitMQ</span></li>
+          <li>Небольшой проект: Kafka — это кластер, который надо эксплуатировать.</li>
+          <li>Нужен общий порядок всех событий: он есть только внутри партиции.</li>
+          <li>Нужны запросы к данным: Kafka — журнал, а не база. <span class="alt">Лучше PostgreSQL или ClickHouse</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>RabbitMQ или Kafka</h2>
+    <p class="lead">Обе системы передают сообщения, но решают разные задачи. RabbitMQ — почтальон: доставил и забыл. Kafka — архив: записал, а читатели приходят сами.</p>
+    <div class="vs" role="table">
+      <div class="vs-row vs-head" role="row"><span role="columnheader"></span><span role="columnheader" class="t-rabbit"><b class="tech">RabbitMQ</b></span><span role="columnheader" class="t-kafka"><b class="tech">Kafka</b></span></div>
+      <div class="vs-row" role="row"><span role="rowheader">Модель</span><span role="cell">Очередь: каждое сообщение получает один потребитель</span><span role="cell">Журнал: каждая группа читает все события</span></div>
+      <div class="vs-row" role="row"><span role="rowheader">После чтения</span><span role="cell">Удаляется после ack</span><span role="cell">Хранится до истечения retention</span></div>
+      <div class="vs-row" role="row"><span role="rowheader">Перечитать историю</span><span role="cell">Нельзя</span><span role="cell">Можно: сдвинуть offset назад</span></div>
+      <div class="vs-row" role="row"><span role="rowheader">Повтор одного сообщения</span><span role="cell">Встроен: nack, повторы, dead letter</span><span role="cell">Нет: только управлять offset самому</span></div>
+      <div class="vs-row" role="row"><span role="rowheader">Маршрутизация</span><span role="cell">Гибкая: exchange, ключи, шаблоны</span><span role="cell">Топик и партиция по ключу</span></div>
+      <div class="vs-row" role="row"><span role="rowheader">Поток</span><span role="cell">Десятки тысяч сообщений в секунду</span><span role="cell">Сотни тысяч и миллионы в секунду</span></div>
+      <div class="vs-row" role="row"><span role="rowheader">Типичная задача</span><span role="cell">Фоновые задачи и команды</span><span role="cell">Поток событий между системами, аналитика</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide t-es">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">Elasticsearch</span>
+      <h2>Поиск по словам, а не по подстроке</h2>
+      <p class="lead">Поисковый движок строит обратный индекс: для каждого слова — список документов, где оно встречается. Слова приводятся к основе, поэтому «красные» находит «красная».</p>
+      <p class="note"><code>LIKE '%…%'</code> в обычной базе ищет точную подстроку и читает всю таблицу. Elasticsearch находит слова в любом порядке и в любой форме и сортирует результаты по релевантности. В демо упрощённый стемминг; настоящий умеет больше, включая поиск с опечатками.</p>
+    </div>
+    <div class="demo" data-demo="search"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide t-es">
+  <div class="slide-inner">
+    <span class="tech">Elasticsearch</span>
+    <h2>Когда брать Elasticsearch</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Полнотекстовый поиск: морфология, опечатки, синонимы, релевантность, подсветка.</li>
+          <li>Каталог с фильтрами и счётчиками по каждому фильтру (фасетами).</li>
+          <li>Поиск и анализ логов (стек ELK, OpenSearch).</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Основная база: транзакций нет, данные копируются из основной базы. <span class="alt">Источник правды — PostgreSQL</span></li>
+          <li>Простой поиск по небольшому каталогу. <span class="alt">Хватит tsvector и pg_trgm в PostgreSQL</span></li>
+          <li>Частые обновления одних и тех же документов: каждое обновление — переиндексация.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide t-ch">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">ClickHouse</span>
+      <h2>Хранить по колонкам, чтобы быстро считать</h2>
+      <p class="lead">Postgres хранит таблицу построчно: чтобы сложить одну колонку, он читает строки целиком. ClickHouse хранит каждую колонку отдельно и читает только нужные. Одинаковые значения подряд ещё и отлично сжимаются.</p>
+      <p class="note">Каждая полоса в схеме — то, что лежит на диске подряд. Выберите запрос и сравните, сколько данных прочитает каждая база. Для поиска одной строки по ключу всё наоборот: построчное хранение выигрывает.</p>
+    </div>
+    <div class="demo" data-demo="columns"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide t-ch">
+  <div class="slide-inner">
+    <span class="tech">ClickHouse</span>
+    <h2>Когда брать ClickHouse</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Аналитика: суммы, средние и группировки по миллиардам строк за секунды.</li>
+          <li>События, логи, метрики: много вставок, данные почти не меняются.</li>
+          <li>Дашборды и отчёты, которые не должны тормозить рабочую базу.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Обычная работа приложения: чтение одной строки по ключу, частые <code>UPDATE</code> и <code>DELETE</code>. <span class="alt">Лучше PostgreSQL</span></li>
+          <li>Транзакции между таблицами.</li>
+          <li>Небольшие объёмы: пока таблица в десятки миллионов строк, Postgres справится сам.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide t-s3">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <span class="tech">S3</span>
+      <h2>Файлы — отдельно от базы</h2>
+      <p class="lead">Объектное хранилище: кладёте файл по ключу и получаете его по ключу через HTTP. Дёшево, почти безгранично, легко раздавать через CDN. Это может быть AWS S3 или совместимое хранилище: MinIO, Cloudflare R2, Yandex Object Storage.</p>
+<pre class="code"><code class="lang-sql">
+-- в базе только ключ файла
+INSERT INTO photos (user_id, s3_key)
+VALUES (42, 'users/42/cat.jpg');
+-- сам файл клиент загружает напрямую в S3
+-- по временной подписанной ссылке (presigned URL)
+</code></pre>
+    </div>
+    <div class="fit single">
+      <div class="fit-col yes">
+        <h3>Подходит</h3>
+        <ul>
+          <li>Фото, видео, документы, выгрузки, бэкапы.</li>
+          <li>Статика сайта и раздача через CDN.</li>
+          <li>Дешёвое хранение огромных объёмов (data lake).</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не подходит</h3>
+        <ul>
+          <li>Частые мелкие правки: объект перезаписывается целиком.</li>
+          <li>Поиск и запросы по содержимому файлов.</li>
+          <li>Задержка в единицы миллисекунд: каждый запрос — это HTTP.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что бы вы выбрали?</h2>
+      <p class="lead">Девять задач из реальных проектов. Выберите технологию и сравните с ответом.</p>
+      <p class="note">У некоторых задач несколько разумных решений. Обратите внимание, как часто «Postgres тоже справится».</p>
+    </div>
+    <div class="demo" data-demo="chooser"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Начните с Postgres</h2>
+    <ul class="points summary">
+      <li>Почти любой проект начинается с одной базы. Postgres закрывает большинство задач: данные, транзакции, JSON, поиск, простые очереди.</li>
+      <li>Добавляйте систему, когда появилась конкретная проблема. База не выдерживает чтений — Redis. Долгие задачи тормозят ответы — очередь. Отчёты мешают рабочей базе — ClickHouse.</li>
+      <li>Каждая новая технология — это ещё бэкапы, мониторинг, обновления и ещё одна вещь, которая может упасть ночью.</li>
+      <li>Кэш, поисковый индекс и аналитика хранят копии данных. Источник правды один, и обычно это Postgres.</li>
+    </ul>
+    <blockquote class="proverb">Выбирайте скучные технологии.<cite>Дэн Маккинли, «Choose Boring Technology»</cite></blockquote>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+</body>
+</html>

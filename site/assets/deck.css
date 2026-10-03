@@ -14,8 +14,11 @@ html, body { height: 100%; overflow: hidden; }
   overscroll-behavior: contain;
   display: none;
 }
+.slide { touch-action: pan-y pinch-zoom; }
 .slide.is-active { display: block; animation: slide-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1); }
 .slide.is-active[data-enter="prev"] { animation-name: slide-in-prev; }
+.slide.is-active[data-enter="none"] { animation: none; }
+.slide.is-peek { display: block; }
 @keyframes slide-in { from { opacity: 0; transform: translateX(28px); } }
 @keyframes slide-in-prev { from { opacity: 0; transform: translateX(-28px); } }
 
