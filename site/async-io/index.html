@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Event loop, корутины и зелёные потоки — интерактивная презентация</title>
+  <meta name="description" content="Как один поток обслуживает тысячи соединений: C10K, epoll и io_uring, цикл событий, микро- и макрозадачи, async/await как конечный автомат, asyncio, горутины, виртуальные потоки Java и процессы Erlang.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-loop" aria-hidden="true">
+      <div class="hl-ring"><i class="hl-dot"></i></div>
+      <div class="hl-core"><b>1 поток</b><span>epoll_wait</span></div>
+      <i class="hl-sock s1"></i><i class="hl-sock s2 on"></i><i class="hl-sock s3"></i><i class="hl-sock s4"></i>
+      <i class="hl-sock s5 on"></i><i class="hl-sock s6"></i><i class="hl-sock s7"></i><i class="hl-sock s8 on"></i>
+      <span class="hl-tag t1">таймеры</span><span class="hl-tag t2">сокеты</span><span class="hl-tag t3">микрозадачи</span>
+    </div>
+    <div class="stack">
+      <h1>Event loop, корутины и зелёные потоки</h1>
+      <p class="lead">Как один поток держит десятки тысяч соединений, что на самом деле делает <code>await</code>, почему одна тяжёлая функция вешает весь Node-сервер и чем горутины отличаются от <code>async def</code>.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>C10K: поток на соединение</h2>
+      <p class="lead">Самая простая модель сервера — на каждое соединение отдельный поток, который блокируется в <code>read()</code>. Код линейный и понятный. Но поток стоит денег, даже когда спит.</p>
+      <ul class="points">
+        <li>Стек: 8 МБ виртуальной памяти (<code>ulimit -s</code>; в Java <code>-Xss</code> 1 МБ), реально занято — десятки КБ. Плюс стек ядра 16 КБ и структуры планировщика.</li>
+        <li>Каждый пришедший запрос — разбудить поток и усыпить: два переключения контекста по 2–5 мкс с учётом промахов кэша.</li>
+        <li>Потолки ядра: <code>vm.max_map_count</code> (два отображения на стек), <code>kernel.threads-max</code>, <code>ulimit -u</code>.</li>
+      </ul>
+      <p class="note">Двигайте ползунки и сравните с циклом событий: один поток, а на соединение — только объект с его состоянием.</p>
+    </div>
+    <div class="demo" data-demo="threads"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Блокирующий и неблокирующий ввод-вывод</h2>
+      <p class="lead">Блокирующий <code>read()</code> усыпляет поток, пока не придут данные. С флагом <code>O_NONBLOCK</code> он сразу возвращает <code>EAGAIN</code>: данных нет, приходите позже.</p>
+<pre class="code"><code class="lang-c">
+fcntl(fd, F_SETFL, O_NONBLOCK);
+n = read(fd, buf, sizeof buf);
+if (n < 0 && errno == EAGAIN) {
+    // данных нет — к другому сокету
+}
+</code></pre>
+      <p class="note">Один поток и три сокета. Данные приходят на B, потом на C, потом на A. Выберите стратегию и нажмите «Запустить».</p>
+    </div>
+    <div class="demo" data-demo="blocking"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>select, poll, epoll, kqueue</h2>
+      <p class="lead">Мультиплексирование: один системный вызов ждёт сразу много дескрипторов и говорит, какие готовы. <code>select</code> и <code>poll</code> каждый раз передают ядру весь список и проверяют его целиком. <code>epoll</code> (Linux) и <code>kqueue</code> (BSD, macOS) хранят список в ядре и возвращают только готовые.</p>
+<pre class="code"><code class="lang-c">
+int ep = epoll_create1(0);
+// регистрация сокета — один раз
+epoll_ctl(ep, EPOLL_CTL_ADD, sock, &ev);
+for (;;) {
+    int n = epoll_wait(ep, events, 64, -1);
+    for (int i = 0; i < n; i++)
+        handle(events[i].data.fd);
+}
+</code></pre>
+      <p class="note">Выберите механизм, задайте число соединений и вызовите ожидание.</p>
+    </div>
+    <div class="demo" data-demo="epoll"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>io_uring: не «можно читать», а «прочитано»</h2>
+      <ul class="points">
+        <li><b>Готовность</b> (epoll, kqueue): ядро сообщает, что сокет готов, а читаете вы сами — ещё один системный вызов на каждую операцию.</li>
+        <li><b>Завершение</b> (io_uring, Windows IOCP): вы ставите операцию в очередь, ядро выполняет её и кладёт результат. Две кольцевые очереди в общей памяти, один вызов на пачку операций.</li>
+        <li>Обычный файл для epoll всегда «готов», а <code>read()</code> всё равно ждёт диск. Поэтому Node (libuv) читает файлы в пуле потоков, а io_uring умеет настоящий асинхронный файловый ввод-вывод.</li>
+      </ul>
+      <p class="note">Двигайте ползунок: сколько системных вызовов нужно, чтобы ответить на пачку запросов.</p>
+    </div>
+    <div class="demo" data-demo="uring"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Цикл событий</h2>
+      <p class="lead">Event loop — это обычный бесконечный цикл вокруг <code>epoll_wait</code>. Он засыпает до ближайшего таймера или готового сокета и по очереди вызывает колбэки. Пока колбэк работает, цикл стоит.</p>
+      <ul class="points">
+        <li>Node.js — libuv, фазы: таймеры → отложенные → poll (сокеты) → <code>setImmediate</code> → закрытия.</li>
+        <li>Python — <code>asyncio</code>: <code>_run_once()</code> вокруг <code>selectors</code>, uvloop — на libuv.</li>
+        <li>То же самое внутри nginx, Redis, Netty, Tokio.</li>
+      </ul>
+      <p class="note">Между любыми двумя колбэками Node и браузер выполняют все микрозадачи — колбэки промисов и продолжения после <code>await</code>.</p>
+    </div>
+<pre class="code"><code class="lang-js">
+// упрощённо — так устроен любой цикл событий
+while (true) {
+  const timeout = timers.nextDeadline() - now();
+  const ready = epoll_wait(ep, timeout);   // спим здесь
+
+  for (const t of timers.expired()) {
+    t.callback();          // макрозадача
+    runAllMicrotasks();    // промисы, await
+  }
+  for (const ev of ready) {
+    ev.callback();         // данные из сокета
+    runAllMicrotasks();
+  }
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Микрозадачи и макрозадачи</h2>
+      <p class="lead">Макрозадача — колбэк таймера или ввода-вывода: одна за оборот цикла. Микрозадача — колбэк промиса или продолжение после <code>await</code>: их цикл выполняет все сразу, пока очередь не опустеет, и только потом берёт следующую макрозадачу.</p>
+      <p class="note">Выберите пример и проходите его по шагам. Сначала попробуйте угадать, в каком порядке появится вывод.</p>
+    </div>
+    <div class="demo" data-demo="eventloop"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что выведет программа?</h2>
+<pre class="code"><code class="lang-js">
+console.log('A');
+setTimeout(() => console.log('B'), 0);
+queueMicrotask(() => console.log('C'));
+(async () => {
+  console.log('D');
+  await 0;
+  console.log('E');
+})();
+console.log('F');
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">A C D E F B</button>
+      <button class="opt" data-correct>A D F C E B</button>
+      <button class="opt">A D F E C B</button>
+      <button class="opt">A D F B C E</button>
+      <div class="explain">Синхронно: <code>A</code>, тело async-функции до <code>await</code> — <code>D</code>, затем <code>F</code>. В очереди микрозадач к этому моменту <code>C</code>, а за ней продолжение после <code>await</code> — <code>E</code>: они выполняются в порядке постановки. Таймер — макрозадача, поэтому <code>B</code> последний, хотя задержка 0.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Колбэки → промисы → async/await</h2>
+    <p class="lead">Механизм под всеми тремя один и тот же — цикл событий. Меняется только то, как вы записываете «продолжи, когда будет готово».</p>
+    <div class="evo">
+      <div class="evo-col">
+        <span class="tech">колбэки</span>
+<pre class="code"><code class="lang-js">
+db.get(id, (err, user) => {
+  if (err) return done(err);
+  api.posts(user, (err, posts) => {
+    if (err) return done(err);
+    done(null, posts.length);
+  });
+});
+</code></pre>
+        <p class="note">Вложенность растёт, ошибку легко потерять, исключение из колбэка не поймать снаружи.</p>
+      </div>
+      <div class="evo-col">
+        <span class="tech">промисы</span>
+<pre class="code"><code class="lang-js">
+db.get(id)
+  .then(user => api.posts(user))
+  .then(posts => posts.length)
+  .catch(handle);
+</code></pre>
+        <p class="note">Цепочка вместо вложенности, ошибки идут в один <code>.catch</code>. Но циклы и ветвления по-прежнему неудобны.</p>
+      </div>
+      <div class="evo-col">
+        <span class="tech">async/await</span>
+<pre class="code"><code class="lang-js">
+async function load(id) {
+  const user = await db.get(id);
+  const posts = await api.posts(user);
+  return posts.length;
+}
+</code></pre>
+        <p class="note">Выглядит как синхронный код: обычные <code>try/catch</code>, <code>for</code>, <code>if</code>. Компилятор сам разрежет функцию на куски — дальше покажем как.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>async-функция — это конечный автомат</h2>
+      <p class="lead">Компилятор режет функцию по каждому <code>await</code>. Локальные переменные, нужные после паузы, переезжают со стека в объект в куче, а номер следующего куска хранится в поле <code>state</code>. Так работают C#, Rust, Kotlin; в JS и Python тот же принцип реализован через сохранённый кадр генератора.</p>
+      <p class="note">Это бесстековые корутины: при паузе стек полностью освобождается, и поток свободен для других задач. Нажимайте «Шаг» и следите за стеком и объектом в куче.</p>
+    </div>
+    <div class="demo" data-demo="statemachine"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Одна тяжёлая задача вешает всех</h2>
+      <p class="lead">Цикл событий кооперативный: колбэк не прервать. Разбор большого JSON, bcrypt, синхронное сжатие, регулярка с катастрофическим откатом — и все остальные запросы ждут, хотя процессор свободен на других ядрах.</p>
+      <ul class="points">
+        <li>Разбить работу на куски и отдавать управление: <code>await new Promise(setImmediate)</code>.</li>
+        <li>Вынести в <code>worker_threads</code> (или пул <code>piscina</code>), в Python — в <code>ProcessPoolExecutor</code>.</li>
+      </ul>
+      <p class="note">Сервер получает 200 запросов в секунду по 2 мс. Запустите тяжёлую задачу на 300 мс в разных режимах и смотрите на задержку остальных запросов.</p>
+    </div>
+    <div class="demo" data-demo="blockloop"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Скрытый пул потоков libuv</h2>
+      <p class="lead">Не всё в Node асинхронно на уровне ядра. Файлы, <code>dns.lookup</code> (а значит, и <code>http.get</code> по имени хоста), <code>crypto.pbkdf2</code>, <code>scrypt</code>, <code>zlib</code> выполняются в пуле из 4 потоков. Пятая задача ждёт в очереди.</p>
+      <p class="note">Классический инцидент: медленный DNS занял все четыре потока, и встали чтения файлов и хеширование паролей. Размер задаётся <code>UV_THREADPOOL_SIZE</code> до старта процесса (максимум 1024). Двигайте ползунки.</p>
+    </div>
+    <div class="demo" data-demo="threadpool"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В Node-сервере кто-то написал «асинхронное» ожидание флага:</p>
+<pre class="code"><code class="lang-js">
+while (!ready) {
+  await Promise.resolve();
+}
+</code></pre>
+      <p class="lead">Флаг <code>ready</code> выставляет обработчик сетевого запроса. Что будет с сервером?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Всё в порядке: <code>await</code> отдаёт управление циклу событий</button>
+      <button class="opt text">Будет работать, но съест одно ядро на 100%</button>
+      <button class="opt text" data-correct>Сервер зависнет: до таймеров и сокетов очередь так и не дойдёт</button>
+      <button class="opt text">Упадёт с переполнением стека</button>
+      <div class="explain"><code>await</code> отдаёт управление только до следующей микрозадачи. Каждый оборот ставит новую микрозадачу, а цикл событий не берёт макрозадачи, пока очередь микрозадач не пуста. Сетевой обработчик, который выставит <code>ready</code>, никогда не запустится. То же с рекурсивным <code>process.nextTick</code>. Отдать управление по-настоящему — <code>await new Promise(r => setImmediate(r))</code> или <code>setTimeout</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Python asyncio: где теряется параллельность</h2>
+      <ul class="points">
+        <li><code>fetch()</code> без <code>await</code> только создаёт объект корутины: код не выполняется, в логе — <code>RuntimeWarning</code>.</li>
+        <li><code>time.sleep</code>, <code>requests</code>, синхронный драйвер БД внутри <code>async def</code> блокируют весь цикл.</li>
+        <li>Блокирующий вызов — в поток: <code>asyncio.to_thread()</code> или <code>loop.run_in_executor()</code>. Счёт на CPU — в процессы: GIL не даст потокам считать параллельно.</li>
+        <li><code>PYTHONASYNCIODEBUG=1</code> предупреждает о колбэках дольше 100 мс.</li>
+      </ul>
+      <p class="note">Выберите вариант кода. Нижняя дорожка — фоновая задача, которая печатает каждые 100 мс: если цикл заблокирован, она молчит.</p>
+    </div>
+    <div class="demo" data-demo="pyasync"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+<pre class="code"><code class="lang-py">
+@app.get("/price")
+async def price():
+    r = requests.get(RATES_URL)   # 200 мс
+    return r.json()
+</code></pre>
+      <p class="lead">FastAPI, один процесс uvicorn. Одновременно пришло 50 запросов. Сколько ждёт последний?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 200 мс: FastAPI асинхронный</button>
+      <button class="opt text" data-correct>Около 10 секунд: запросы выполняются по одному</button>
+      <button class="opt text">Около 200 мс: requests сам уходит в отдельный поток</button>
+      <button class="opt text">Первые 40 — быстро, остальные ждут пул потоков</button>
+      <div class="explain"><code>requests.get</code> блокирует поток цикла событий, и 50 × 200 мс выполняются строго подряд. Парадокс: если убрать <code>async</code> и объявить обычный <code>def</code>, FastAPI сам запустит обработчик в пуле потоков (40 по умолчанию), и стало бы быстро. Правильно — асинхронный клиент: <code>await httpx.AsyncClient().get(...)</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Зелёные потоки: M задач на N потоков</h2>
+      <p class="lead">Стековая корутина — свой маленький стек, который рантайм умеет отложить в сторону. Приостановиться можно на любой глубине вызовов, и код пишется как обычный блокирующий, без <code>async</code>. Рантайм раскладывает тысячи таких задач по нескольким потокам ОС.</p>
+      <ul class="points">
+        <li><b>Go</b>: стек от 2 КБ растёт по мере нужды, вытесняет долгие циклы через 10 мс. Подробнее о GMP — <a href="/go-channels/#4">в презентации про горутины</a>.</li>
+        <li><b>Java 21+</b>: виртуальные потоки поверх ForkJoinPool, кадры стека копируются в кучу. Не вытесняются по времени.</li>
+        <li><b>Erlang/Elixir</b>: процесс ~2,7 КБ со своей кучей, вытеснение по счётчику редукций.</li>
+      </ul>
+      <p class="note">Выберите рантайм. Действие выполняет задача на первом работающем потоке.</p>
+    </div>
+    <div class="demo" data-demo="mn"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Раскраска функций</h2>
+      <p class="lead">В мире бесстековых корутин функции двух цветов. Асинхронную можно вызвать только из асинхронной, и <code>async</code> расползается вверх по всему стеку вызовов.</p>
+      <ul class="points">
+        <li>Из синхронной функции дождаться асинхронной нельзя, не заблокировав цикл: <code>asyncio.run()</code> внутри работающего цикла — ошибка.</li>
+        <li>Библиотеки раздваиваются: <code>requests</code> и <code>httpx.AsyncClient</code>, синхронный и асинхронный режимы в psycopg 3, <code>fs.readFileSync</code> и <code>fs.promises</code>.</li>
+        <li>Колбэк в <code>map</code> или <code>sort</code> не может сделать <code>await</code>.</li>
+        <li>Go, Java с виртуальными потоками и Erlang цветов не имеют: любая функция может заблокироваться.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+def total(ids):              # синяя: обычная
+    return sum(price(i) for i in ids)
+
+def price(i):
+    return fetch_price(i)    # нужна сеть…
+
+async def fetch_price(i):    # красная: async
+    ...
+
+# Чтобы price() могла сделать await,
+# она должна стать async. Тогда и total(),
+# и все, кто вызывает total(), — до main().
+</code></pre>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Сравнение моделей</h2>
+    <div class="cmp" role="table">
+      <div class="cmp-row cmp-head" role="row">
+        <span role="columnheader">Модель</span><span role="columnheader">Память на задачу</span><span role="columnheader">Вытеснение</span><span role="columnheader">Цвета</span><span role="columnheader">Брать, когда</span>
+      </div>
+      <div class="cmp-row" role="row">
+        <b role="rowheader">Поток ОС на запрос<small>Java до 21, Python WSGI, Rails</small></b>
+        <span role="cell">десятки КБ + 8 МБ адресов</span><span role="cell">да, ядро</span><span role="cell">нет</span>
+        <span role="cell">Сотни одновременных запросов, блокирующие библиотеки, нужен простой код.</span>
+      </div>
+      <div class="cmp-row" role="row">
+        <b role="rowheader">Цикл событий + async/await<small>Node, asyncio, Tokio, C#</small></b>
+        <span role="cell">сотни байт — КБ</span><span role="cell">нет, кооперативно</span><span role="cell">да</span>
+        <span role="cell">Много соединений и мало счёта: прокси, шлюзы, WebSocket, чаты, вызовы внешних API.</span>
+      </div>
+      <div class="cmp-row" role="row">
+        <b role="rowheader">Горутины<small>Go</small></b>
+        <span role="cell">от 2 КБ, растёт</span><span role="cell">да, рантайм</span><span role="cell">нет</span>
+        <span role="cell">Сетевые сервисы с конкурентностью и счётом одновременно, все ядра без усилий.</span>
+      </div>
+      <div class="cmp-row" role="row">
+        <b role="rowheader">Виртуальные потоки<small>Java 21+</small></b>
+        <span role="cell">сотни байт — КБ в куче</span><span role="cell">нет, только на блокировках</span><span role="cell">нет</span>
+        <span role="cell">Существующий блокирующий Java-код (JDBC, Spring MVC), которому нужны тысячи запросов.</span>
+      </div>
+      <div class="cmp-row" role="row">
+        <b role="rowheader">Процессы Erlang<small>Erlang, Elixir</small></b>
+        <span role="cell">~2,7 КБ, своя куча</span><span role="cell">да, по редукциям</span><span role="cell">нет</span>
+        <span role="cell">Миллионы долгоживущих соединений, изоляция сбоев, предсказуемые задержки.</span>
+      </div>
+    </div>
+    <p class="note">Ни одна модель не делает быстрее сам ввод-вывод. Они экономят память и переключения, пока задачи ждут. Если узкое место — CPU или база данных, асинхронность не поможет.</p>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Типичные грабли</h2>
+    <div class="fit">
+      <div class="fit-col no">
+        <h3>Так ломается</h3>
+        <ul>
+          <li><code>Promise.all</code> или <code>gather</code> на 10 000 запросов: кончаются сокеты и лимиты API.<span class="alt">Ограничивайте: семафор, p-limit, пул воркеров.</span></li>
+          <li>Тысячи виртуальных потоков на пул БД из 10 соединений: все стоят в очереди за соединением.<span class="alt">Лимит конкурентности — по самому узкому ресурсу.</span></li>
+          <li>Ожидание без таймаута: зависший сокет держит задачу вечно.<span class="alt"><code>asyncio.timeout</code>, <code>AbortSignal.timeout</code>, <code>context.WithTimeout</code>.</span></li>
+          <li>Задача без ссылки: <code>asyncio.create_task(x)</code> может исчезнуть со сборщиком мусора, а ошибка промиса — потеряться.<span class="alt">Храните задачи, используйте <code>TaskGroup</code>.</span></li>
+        </ul>
+      </div>
+      <div class="fit-col yes">
+        <h3>Так видно</h3>
+        <ul>
+          <li>Задержка цикла событий: <code>monitorEventLoopDelay()</code> в Node, режим отладки asyncio.</li>
+          <li>Блокирующий вызов в стеке: <code>py-spy dump</code>, <code>node --cpu-prof</code>.</li>
+          <li>Горутины и где они висят: <code>/debug/pprof/goroutine?debug=2</code>.</li>
+          <li>Закреплённые виртуальные потоки: событие JFR <code>jdk.VirtualThreadPinned</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li><code>strace</code> покажет, что процесс на самом деле ждёт: <code>epoll_wait</code> — цикл событий простаивает, долгий <code>read</code> или <code>futex</code> — что-то заблокировано.</li>
+        <li>Число потоков и переключений — в <code>/proc</code>. Много невольных переключений — потокам не хватает ядер.</li>
+        <li><code>perf sched</code> и <code>pidstat -w</code> считают переключения по процессам.</li>
+        <li>У Go — трассировка планировщика, у Java — дамп виртуальных потоков.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+# какие системные вызовы и сколько времени
+$ strace -f -c -p $PID
+$ strace -f -e trace=epoll_wait,read,write -p $PID
+
+# потоки и переключения контекста
+$ ls /proc/$PID/task | wc -l
+$ grep ctxt /proc/$PID/status
+voluntary_ctxt_switches:     183022
+nonvoluntary_ctxt_switches:  4211
+$ pidstat -w -p $PID 1
+
+# соединения на сокетах
+$ ss -s
+
+# Go: состояние планировщика раз в секунду
+$ GODEBUG=schedtrace=1000 ./server
+# Java: дамп всех потоков, включая виртуальные
+$ jcmd $PID Thread.dump_to_file -format=json t.json
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Поток на соединение прост, но стоит памяти и переключений контекста. Начиная с тысяч соединений нужна другая модель.</li>
+      <li>Основа всех моделей — неблокирующие сокеты и <code>epoll</code>/<code>kqueue</code>: один вызов возвращает готовые дескрипторы. io_uring сообщает уже о выполненных операциях.</li>
+      <li>Цикл событий кооперативный: одна долгая функция останавливает всех. Микрозадачи выполняются до опустошения очереди, раньше таймеров и ввода-вывода.</li>
+      <li><code>async/await</code> — синтаксис для конечного автомата. Плата — раскраска функций и необходимость всё время помнить про блокирующие вызовы.</li>
+      <li>Горутины, виртуальные потоки и процессы Erlang прячут цикл событий в рантайм: код блокирующий, а потоков ОС мало.</li>
+    </ul>
+    <p class="proverb">Асинхронность не ускоряет работу — она позволяет не тратить ресурсы на ожидание.</p>
+    <p class="note">Дальше — <a href="/networking/">сеть</a>: что происходит с данными между сокетом и проводом.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-runtime.js"></script>
+</body>
+</html>

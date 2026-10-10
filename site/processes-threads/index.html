@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Процессы, потоки и ядро ОС — интерактивная презентация</title>
+  <meta name="description" content="Режим ядра и системные вызовы, процессы, fork и exec, сигналы, планировщик, переключение контекста, потоки, GIL, load average и контейнеры.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-top" aria-hidden="true">
+      <div class="ht-head"><span>top</span><span>load average: 1,92 1,40 0,88</span></div>
+      <div class="ht-cpus">
+        <div><span>0</span><i style="--w:92%"></i></div>
+        <div><span>1</span><i style="--w:64%"></i></div>
+        <div><span>2</span><i style="--w:18%"></i></div>
+        <div><span>3</span><i style="--w:41%"></i></div>
+      </div>
+      <div class="ht-rows">
+        <div class="ht-th"><span>PID</span><span>S</span><span>THR</span><span>КОМАНДА</span></div>
+        <div><span>1</span><span>S</span><span>1</span><span>systemd</span></div>
+        <div><span>812</span><span>S</span><span>1</span><span>└ sshd</span></div>
+        <div><span>1430</span><span>S</span><span>1</span><span>&nbsp;&nbsp;└ bash</span></div>
+        <div class="hot"><span>2210</span><span>R</span><span>9</span><span>&nbsp;&nbsp;&nbsp;&nbsp;└ python app.py</span></div>
+        <div><span>2245</span><span>D</span><span>1</span><span>&nbsp;&nbsp;&nbsp;&nbsp;└ tar czf</span></div>
+        <div class="zomb"><span>2251</span><span>Z</span><span>1</span><span>&nbsp;&nbsp;&nbsp;&nbsp;└ [ls] &lt;defunct&gt;</span></div>
+      </div>
+    </div>
+    <div class="stack">
+      <h1>Процессы, потоки и ядро ОС</h1>
+      <p class="lead">Что происходит между вашим <code>print()</code> и железом: системные вызовы, fork и exec, сигналы, планировщик, потоки и GIL, load average и контейнеры.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Режим ядра и режим пользователя</h2>
+      <p class="lead">Процессор умеет работать в двух режимах. Ваш код выполняется в пользовательском (на x86 — кольцо 3): привилегированные инструкции запрещены, доступна только своя память. Ядро работает в кольце 0 и может всё.</p>
+      <ul class="points">
+        <li>Попасть в ядро можно тремя путями: системный вызов, исключение (ошибка страницы, деление на ноль) и прерывание от устройства или таймера.</li>
+        <li>Так ОС защищает процессы друг от друга и делит между ними диск, сеть и процессор.</li>
+      </ul>
+      <p class="note">Выберите действие — увидите, где оно выполняется.</p>
+    </div>
+    <div class="demo" data-demo="modes"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Системные вызовы: что видит strace</h2>
+      <p class="lead">Системный вызов — единственная дверь из программы в ядро. Номер вызова и аргументы кладутся в регистры, инструкция <code>syscall</code> переключает процессор в режим ядра. В Linux около 400 вызовов, и любой ввод-вывод в любом языке сводится к ним.</p>
+      <p class="note"><code>strace</code> показывает эти вызовы у работающей программы. Выберите строку на Python и пройдите по шагам.</p>
+    </div>
+    <div class="demo" data-demo="strace"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сколько стоит системный вызов</h2>
+      <p class="lead">Вход в ядро и выход — это сотни наносекунд: сохранить регистры, проверить аргументы, а с защитой от Meltdown и Spectre ещё и сбросить часть состояния процессора. Обычный вызов функции — около наносекунды.</p>
+      <ul class="points">
+        <li>Поэтому ввод-вывод буферизуют: Python <code>open()</code> и Java <code>BufferedOutputStream</code> копят по 8 КБ, Go <code>bufio.Writer</code> — 4 КБ.</li>
+        <li><code>os.File.Write</code> в Go, <code>FileOutputStream</code> в Java и <code>fs.writeSync</code> в Node не буферизуют: каждый вызов — системный.</li>
+      </ul>
+      <p class="note">Программа пишет в файл 100 МБ. Двигайте размер буфера.</p>
+    </div>
+    <div class="demo" data-demo="syscost"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что такое процесс</h2>
+      <p class="lead">Процесс — это запущенная программа вместе со всем, что ядро ей выделило: адресное пространство, открытые файлы, права, окружение. Внутри — один или несколько потоков, которые выполняют код.</p>
+      <p class="note">Почти всё это видно в <code>/proc/&lt;PID&gt;/</code>. Нажмите на часть процесса.</p>
+    </div>
+    <div class="demo" data-demo="anatomy"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>fork, exec, wait</h2>
+      <p class="lead">В Unix новый процесс появляется в два шага. <code>fork()</code> делает копию текущего процесса, <code>execve()</code> заменяет в копии программу. Между ними ребёнок настраивает себя: перенаправляет вывод, меняет каталог. Так shell выполняет <code>ls&nbsp;&gt;&nbsp;out.txt</code>.</p>
+      <p class="note">Копия дешёвая: страницы памяти общие и копируются только при записи (copy-on-write). Но таблицы страниц копируются сразу — у процесса на 10 ГБ <code>fork</code> занимает порядка 100 мс. Пройдите по шагам и попробуйте другие сценарии.</p>
+    </div>
+    <div class="demo" data-demo="forkexec"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Сигналы</h2>
+      <p class="lead">Сигнал — асинхронное уведомление процессу от ядра или другого процесса. На каждый сигнал есть действие по умолчанию, и почти любой можно перехватить своим обработчиком.</p>
+      <ul class="points">
+        <li><code>SIGKILL</code> и <code>SIGSTOP</code> перехватить нельзя: процесс не узнает, что его убили, и не успеет ничего закрыть.</li>
+        <li>Код выхода после смерти от сигнала — 128 + номер: 137 — убит <code>SIGKILL</code> (часто это OOM killer), 143 — <code>SIGTERM</code>.</li>
+        <li>Обработчик должен быть коротким: выставить флаг и вернуться. Python вызывает его между байткодами главного потока, Go отдаёт сигнал в канал, Node — событием <code>process.on('SIGTERM')</code>.</li>
+      </ul>
+    </div>
+    <div class="sigtable" role="table">
+      <div class="sg" role="row"><b role="rowheader">SIGTERM 15</b><span role="cell">«Пожалуйста, завершись». Его шлют <code>kill</code>, <code>docker stop</code>, Kubernetes. По умолчанию — смерть. Ловите и завершайтесь аккуратно.</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGINT 2</b><span role="cell">Ctrl+C в терминале. В Python — исключение <code>KeyboardInterrupt</code>.</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGKILL 9</b><span role="cell">Немедленная смерть, перехватить нельзя. Через грейс-период после SIGTERM и от OOM killer.</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGCHLD 17</b><span role="cell">Ребёнок завершился или остановился. Сигнал родителю забрать статус через <code>wait</code>.</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGHUP 1</b><span role="cell">Терминал закрыт. Демоны по традиции перечитывают по нему конфиг (nginx).</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGPIPE 13</b><span role="cell">Запись в закрытый канал или сокет. По умолчанию убивает; Python его игнорирует и бросает <code>BrokenPipeError</code>.</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGSEGV 11</b><span role="cell">Обращение к чужой или несуществующей памяти. Ядро убивает процесс целиком, со всеми потоками.</span></div>
+      <div class="sg" role="row"><b role="rowheader">SIGQUIT 3</b><span role="cell">Java печатает дамп всех потоков и работает дальше, Go печатает стеки горутин и завершается.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Остановка контейнера и PID 1</h2>
+      <p class="lead"><code>docker stop</code> шлёт <code>SIGTERM</code> процессу с PID 1 в контейнере, ждёт 10 секунд (Kubernetes — 30) и добивает <code>SIGKILL</code>. Есть две ловушки.</p>
+      <ul class="points">
+        <li>Скрипт-обёртка без <code>exec</code>: PID 1 — это shell, и сигнал до приложения не доходит.</li>
+        <li>Ядро не доставляет PID 1 сигналы, для которых нет обработчика. Приложение без обработчика <code>SIGTERM</code> в роли PID 1 его просто не заметит. А ещё PID 1 обязан забирать осиротевших зомби.</li>
+      </ul>
+      <p class="note">Решение: <code>exec</code> в скрипте, обработчик SIGTERM и маленький init (<code>docker run --init</code>, tini, dumb-init). Выберите вариант и нажмите <code>docker stop</code>.</p>
+    </div>
+    <div class="demo" data-demo="dockerstop"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Планировщик</h2>
+      <p class="lead">Готовых к работе задач обычно больше, чем ядер. Планировщик Linux (CFS, с версии 6.6 — EEVDF) делит время честно: у каждой задачи счётчик потраченного времени с учётом веса, и на ядро идёт та, у кого он меньше.</p>
+      <ul class="points">
+        <li>Задача, ждущая диск или сеть, заблокирована и в очереди не стоит. Проснувшись, она отстала по счётчику и получает ядро почти сразу — поэтому веб-сервер отзывчив рядом с тяжёлой сборкой.</li>
+        <li><code>nice</code> меняет вес: каждая ступень — примерно ±10% процессора.</li>
+      </ul>
+      <p class="note">A и B только считают, C — веб-сервер: 1 мс работы, потом 8 мс ждёт сеть. Добавьте задач, уберите ядро, поменяйте nice или переключитесь на простую очередь.</p>
+    </div>
+    <div class="demo" data-demo="scheduler"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Переключение контекста</h2>
+      <p class="lead">Чтобы сменить задачу на ядре, ядро сохраняет её регистры, указатель стека и счётчик команд, выбирает следующую и загружает её состояние. При переходе в другой процесс оно ещё и меняет таблицу страниц.</p>
+      <ul class="points">
+        <li>Прямая цена — 1–3 мкс. Главная цена — косвенная: новая задача находит кэши и TLB заполненными чужими данными и несколько десятков микросекунд работает медленнее.</li>
+        <li>Тысячи активных потоков на нескольких ядрах — это постоянные переключения. Счётчики видно в <code>vmstat 1</code> (столбец <code>cs</code>) и <code>pidstat -w</code>.</li>
+      </ul>
+      <p class="note">Двигайте частоту переключений и размер рабочих данных задачи.</p>
+    </div>
+    <div class="demo" data-demo="ctxswitch"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Потоки и процессы</h2>
+      <p class="lead">Поток — это ещё один исполнитель внутри процесса: свои регистры и стек, но общие память, файлы и обработчики сигналов. В Linux поток — та же задача ядра, что и процесс, просто созданная <code>clone()</code> с флагами «делить память и файлы».</p>
+      <p class="note">Общая память — это и плюс (обмен данными без копирования), и минус: гонки данных и общая судьба. Синхронизация — в презентации <a href="/concurrency-sync/">про конкурентность</a>, лёгкие потоки и async — <a href="/async-io/">про асинхронный ввод-вывод</a>.</p>
+    </div>
+    <div class="cmp" role="table">
+      <div class="cmp-r cmp-h" role="row"><span role="columnheader"></span><b role="columnheader">Процессы</b><b role="columnheader">Потоки</b></div>
+      <div class="cmp-r" role="row"><span role="rowheader">Память</span><span role="cell">Своя у каждого</span><span role="cell">Общая, свой только стек</span></div>
+      <div class="cmp-r" role="row"><span role="rowheader">Создание</span><span role="cell">fork — от 50 мкс и дольше с ростом памяти, fork+exec — около 1 мс</span><span role="cell">10–20 мкс</span></div>
+      <div class="cmp-r" role="row"><span role="rowheader">Обмен данными</span><span role="cell">Каналы, сокеты, общая память — с сериализацией</span><span role="cell">Просто общие объекты — с блокировками</span></div>
+      <div class="cmp-r" role="row"><span role="rowheader">Переключение</span><span role="cell">Дороже: смена таблицы страниц, TLB</span><span role="cell">Дешевле</span></div>
+      <div class="cmp-r" role="row"><span role="rowheader">Падение</span><span role="cell">Умирает один процесс</span><span role="cell">Segfault в одном потоке убивает весь процесс</span></div>
+      <div class="cmp-r" role="row"><span role="rowheader">Утечки</span><span role="cell">Процесс завершился — ОС всё вернула</span><span role="cell">Живут, пока жив процесс</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сколько потоков можно создать</h2>
+      <p class="lead">Стек потока — 8 МБ виртуальной памяти в Linux и 1 МБ в Java, но реально занимаются только тронутые страницы: обычно десятки килобайт. Упираются раньше в лимиты ядра и в переключения.</p>
+      <ul class="points">
+        <li>Ошибки: <code>pthread_create: Resource temporarily unavailable</code>, в Java — <code>OutOfMemoryError: unable to create native thread</code>.</li>
+        <li>В контейнере есть ещё <code>pids.max</code> из cgroup, у Go — свой лимит в 10 000 потоков ОС.</li>
+      </ul>
+      <p class="note">Двигайте число потоков: какой лимит сработает первым на сервере с 16 ГБ?</p>
+    </div>
+    <div class="demo" data-demo="threadcalc"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Python и GIL</h2>
+      <p class="lead">В CPython байткод выполняет только поток, держащий глобальную блокировку интерпретатора (GIL). Потоки отдают её каждые 5 мс и на время ввода-вывода. Поэтому потоки ускоряют ожидание сети, но не вычисления на чистом Python.</p>
+      <ul class="points">
+        <li>Для вычислений — <code>multiprocessing</code> или <code>ProcessPoolExecutor</code>: отдельные процессы со своим GIL, но данные передаются через pickle.</li>
+        <li>Python 3.13+ можно собрать без GIL (<code>python3.14t</code>): потоки работают параллельно, однопоточный код медленнее на 5–10%.</li>
+      </ul>
+      <p class="note">Выберите задачу и способ, нажмите «Запустить». Задача — 8 одинаковых кусков работы на 4 ядрах.</p>
+    </div>
+    <div class="demo" data-demo="gil"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как с этим живут рантаймы</h2>
+    <div class="rts">
+      <div class="rt">
+        <span class="tech">Python</span>
+        <p>Потоки ОС 1:1, но байткод выполняет один поток за раз. Вычисления — в процессы. На Linux с 3.14 процессы по умолчанию запускаются через <code>forkserver</code>, а не <code>fork</code>.</p>
+      </div>
+      <div class="rt">
+        <span class="tech">Node.js</span>
+        <p>Ваш JS — один поток с циклом событий. Файлы, DNS, crypto и zlib уходят в пул libuv из 4 потоков (<code>UV_THREADPOOL_SIZE</code>). Вычисления — в <code>worker_threads</code>: отдельные изоляты V8 в том же процессе, обмен через <code>postMessage</code> или <code>SharedArrayBuffer</code>.</p>
+      </div>
+      <div class="rt">
+        <span class="tech">Java</span>
+        <p>Обычный поток — поток ОС с 1 МБ стека. Поэтому их держат в пулах (<code>ExecutorService</code>) фиксированного размера. С Java 21 есть виртуальные потоки: миллионы задач поверх нескольких потоков ОС.</p>
+      </div>
+      <div class="rt">
+        <span class="tech">Go</span>
+        <p>Горутины M:N: тысячи горутин на <code>GOMAXPROCS</code> потоках ОС, стек от 2 КБ. Блокирующий системный вызов занимает поток целиком, и рантайм запускает ещё один на замену.</p>
+      </div>
+    </div>
+    <p class="note">Общий принцип: потоков ОС, которые одновременно считают, должно быть примерно столько же, сколько ядер. Остальное — ожидание, его дешевле обслуживать циклом событий или лёгкими потоками.</p>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Load average</h2>
+      <p class="lead">Три числа в <code>uptime</code> и <code>top</code> — сглаженное среднее числа задач, которые работают или ждут ядро, за 1, 5 и 15 минут. Сравнивайте с числом ядер: load 8 на 8 ядрах — полная загрузка, на 2 ядрах — очередь вчетверо длиннее.</p>
+      <p class="note">В Linux в load входят и задачи в состоянии D — непрерываемое ожидание диска или NFS. Поэтому высокий load при свободном процессоре — повод смотреть на диск. Двигайте ползунки и следите, как догоняют средние.</p>
+    </div>
+    <div class="demo" data-demo="loadavg"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Контейнер — это просто процесс</h2>
+      <p class="lead">Никакой виртуальной машины: процессы контейнера видны в <code>ps</code> на хосте. Изоляцию дают namespaces — свои PID, сеть, файловая система, hostname. Ресурсы ограничивают cgroups.</p>
+      <ul class="points">
+        <li>Лимит CPU — это квота: <code>cpu.max = 200000 100000</code> значит 200 мс процессорного времени на каждые 100 мс. Квоту тратят все потоки вместе.</li>
+        <li>16 потоков выжигают её за 12,5 мс, и процесс стоит до конца периода. Это видно в <code>cpu.stat</code>: <code>nr_throttled</code>.</li>
+        <li>Пулы по числу ядер хоста усиливают эффект: <code>os.cpu_count()</code> в Python видит все ядра, GOMAXPROCS учитывает лимит только с Go 1.25.</li>
+      </ul>
+      <p class="note">Двигайте лимит и число занятых потоков. Запросу нужно 50 мс процессора.</p>
+    </div>
+    <div class="demo" data-demo="cgroup"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В программе 8 потоков. Один из них вызывает <code>fork()</code> без <code>exec</code>. Что окажется в процессе-ребёнке?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Копии всех 8 потоков</button>
+      <button class="opt text" data-correct>Только поток, вызвавший fork, — а блокировки остальных потоков остались захвачены навсегда</button>
+      <button class="opt text">Ни одного потока: ребёнок сразу завершится</button>
+      <button class="opt text">8 потоков, но остановленных до вызова exec</button>
+      <div class="explain">Ребёнок получает копию всей памяти, но только один поток. Если в момент fork другой поток держал мьютекс — аллокатора, логгера, пула соединений, — в ребёнке его никто не отпустит, и первый же вызов зависнет. Поэтому Python 3.12 предупреждает о fork в многопоточной программе, а с 3.14 на Linux <code>multiprocessing</code> по умолчанию использует <code>forkserver</code>. Безопасно сразу после fork только вызвать <code>exec</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">На сервере с 8 ядрами load average 40, а <code>top</code> показывает 92% idle. Что происходит?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">40 потоков спят в <code>sleep()</code></button>
+      <button class="opt text">В системе много процессов-зомби</button>
+      <button class="opt text" data-correct>Задачи висят в состоянии D: ждут диск или NFS</button>
+      <button class="opt text">Ошибка подсчёта в top, надо смотреть htop</button>
+      <div class="explain">Спящие задачи (S) и зомби (Z) в load не входят. Linux считает работающие и готовые (R) плюс непрерываемо ждущие ввода-вывода (D). Найти их: <code>ps -eo pid,stat,wchan:30,cmd | awk '$2 ~ /D/'</code>, а <code>vmstat 1</code> покажет их число в столбце <code>b</code>. Частые причины — перегруженный диск или отвалившийся NFS.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">8 потоков Python с GIL считают <code>hashlib.sha256()</code> от блоков по 1 МБ на 8 ядрах. Какое будет ускорение по сравнению с одним потоком?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Никакого: GIL пускает только один поток</button>
+      <button class="opt text">Станет медленнее из-за борьбы за GIL</button>
+      <button class="opt text" data-correct>Почти восьмикратное</button>
+      <button class="opt text">Двукратное: больше GIL не позволяет</button>
+      <div class="explain">GIL защищает интерпретатор, а не код на C. <code>hashlib</code> отпускает его на данных больше 2 КБ, так же поступают <code>zlib</code>, операции numpy над большими массивами, чтение файлов и сокетов. Пока поток внутри такого кода, другие выполняют Python. Медленно в потоках только то, что крутится в байткоде.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как посмотреть у себя</h2>
+      <ul class="points">
+        <li><code>ps</code>, <code>top -H</code>, <code>htop</code> — процессы, их потоки и состояния: R работает, S спит, D ждёт диск, Z зомби.</li>
+        <li><code>strace -f -c</code> — какие системные вызовы и сколько времени на них уходит. Сильно замедляет программу: на проде осторожно.</li>
+        <li><code>/proc/&lt;PID&gt;/</code> — всё о процессе: память, файлы, лимиты, переключения контекста.</li>
+        <li>Стеки всех потоков: <code>py-spy dump --pid</code> для Python, <code>jstack</code> для Java, <code>kill -QUIT</code> для Go.</li>
+        <li><code>perf top</code> и <code>perf sched</code> — где тратится процессор и сколько задачи ждут в очереди.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+ps -eo pid,ppid,stat,nlwp,rss,cmd --forest
+pstree -p 2210
+
+strace -f -c python app.py   # сводка
+strace -f -e trace=process,signal -p 2210
+
+grep -E 'State|Threads|ctxt' /proc/2210/status
+ls -l /proc/2210/fd    # файлы и сокеты
+cat /proc/2210/limits
+tr '\0' '\n' &lt; /proc/2210/environ
+
+vmstat 1      # r — очередь, b — D, cs
+pidstat -w 1  # переключения контекста
+
+cat /sys/fs/cgroup/cpu.max
+cat /sys/fs/cgroup/cpu.stat  # nr_throttled
+ls -l /proc/2210/ns    # namespaces
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Всё, что выходит за пределы памяти процесса, идёт через системные вызовы. Они стоят сотни наносекунд — буферизуйте ввод-вывод.</li>
+      <li>Процесс — адресное пространство, файлы и права. Поток — исполнитель внутри него. Процессы изолированы, потоки дешевле, но падают вместе.</li>
+      <li>Новый процесс — это fork и exec. Родитель обязан вызвать wait, иначе остаются зомби.</li>
+      <li>В контейнере PID 1 особенный: <code>exec</code> в скриптах, обработчик SIGTERM и <code>--init</code>.</li>
+      <li>Планировщик честно делит ядра и быстро будит тех, кто ждал ввод-вывод. Лишние активные потоки — это переключения и холодные кэши.</li>
+      <li>Load average — очередь к ядрам плюс ожидание диска. Лимит CPU в контейнере — квота, которую потоки выжигают вместе.</li>
+    </ul>
+    <p class="proverb">Ваша программа не владеет процессором — она его арендует у ядра.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-sched.js"></script>
+</body>
+</html>

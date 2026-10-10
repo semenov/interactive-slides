@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Деревья, кучи и префиксные деревья — интерактивная презентация</title>
+  <meta name="description" content="Обходы деревьев, деревья поиска и балансировка, B-деревья в базах данных, кучи и очереди с приоритетом, trie: как устроены, где живут на практике и как встречаются на собеседованиях.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <svg class="hero" viewBox="0 0 340 300" aria-hidden="true">
+      <g class="h-edges">
+        <path d="M170 40 L95 105 M170 40 L245 105 M95 105 L55 170 M95 105 L135 170 M245 105 L205 170 M245 105 L285 170"/>
+      </g>
+      <g class="h-nodes">
+        <circle class="root" cx="170" cy="40" r="24"/><text x="170" y="40">2</text>
+        <circle cx="95" cy="105" r="22"/><text x="95" y="105">5</text>
+        <circle cx="245" cy="105" r="22"/><text x="245" y="105">3</text>
+        <circle cx="55" cy="170" r="20"/><text x="55" y="170">9</text>
+        <circle cx="135" cy="170" r="20"/><text x="135" y="170">7</text>
+        <circle cx="205" cy="170" r="20"/><text x="205" y="170">8</text>
+        <circle cx="285" cy="170" r="20"/><text x="285" y="170">4</text>
+      </g>
+      <g class="h-arr">
+        <rect class="root" x="12" y="236" width="42" height="42" rx="6"/><text x="33" y="257">2</text>
+        <rect x="58" y="236" width="42" height="42" rx="6"/><text x="79" y="257">5</text>
+        <rect x="104" y="236" width="42" height="42" rx="6"/><text x="125" y="257">3</text>
+        <rect x="150" y="236" width="42" height="42" rx="6"/><text x="171" y="257">9</text>
+        <rect x="196" y="236" width="42" height="42" rx="6"/><text x="217" y="257">7</text>
+        <rect x="242" y="236" width="42" height="42" rx="6"/><text x="263" y="257">8</text>
+        <rect x="288" y="236" width="42" height="42" rx="6"/><text x="309" y="257">4</text>
+      </g>
+      <path class="h-link" d="M95 127 C 95 200, 79 210, 79 232 M245 127 C 245 200, 125 200, 125 232"/>
+    </svg>
+    <div class="stack">
+      <p class="series">Алгоритмы и структуры данных · 4</p>
+      <h1>Деревья, кучи и префиксные деревья</h1>
+      <p class="lead">Обходы, деревья поиска и балансировка, B-деревья в базах данных, кучи и очереди с приоритетом, trie. Как они устроены, где живут в ОС, базах и стандартных библиотеках и как узнать их в задаче на собеседовании.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и узлы деревьев.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Деревья повсюду</h2>
+      <p class="lead">Дерево — иерархия без циклов: один корень, у каждого узла ровно один родитель. DOM, AST, файловая система, JSON, оргструктура, план SQL-запроса — всё деревья.</p>
+      <p class="note">Почти любая операция над ними — обход, и вопрос только в порядке: родитель до детей, после детей или по уровням. Выберите пример и операцию: цифры — порядок посещения узлов.</p>
+    </div>
+    <div class="demo" data-demo="everywhere"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Обходы: в глубину и в ширину</h2>
+      <ul class="points">
+        <li><b>Pre-order</b> — узел, потом дети: копирование, сериализация, <code>find</code>.</li>
+        <li><b>In-order</b> — левое, узел, правое. Только для двоичных; в дереве поиска даёт ключи по возрастанию.</li>
+        <li><b>Post-order</b> — дети, потом узел: <code>du</code>, <code>rm -r</code>, вычисление выражений, освобождение памяти.</li>
+        <li><b>BFS</b> — по уровням через очередь: «ближайшие сначала», «все на глубине k».</li>
+      </ul>
+      <p class="note">DFS хранит путь от корня — стек глубиной h. BFS хранит фронт — очередь шириной до n/2 узлов. Выберите порядок и жмите «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="traverse"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Рекурсия — это тоже стек</h2>
+      <p class="lead">Рекурсивный обход использует системный стек: кадр на уровень. У сбалансированного дерева глубина ~log₂ n, у вырожденного — n, и стек кончается. Явный стек живёт в куче и ограничен только памятью.</p>
+<pre class="code"><code class="lang-py"># рекурсия: глубина ограничена стеком
+def dfs(node):
+    if node:
+        yield node.val
+        yield from dfs(node.left)
+        yield from dfs(node.right)
+
+# явный стек: глубина любая
+def dfs_iter(root):
+    stack = [root] if root else []
+    while stack:
+        node = stack.pop()
+        yield node.val
+        if node.right: stack.append(node.right)
+        if node.left: stack.append(node.left)</code></pre>
+    </div>
+    <div class="stack">
+      <p class="note limits">Лимиты: CPython — 1000 кадров (<code>sys.getrecursionlimit()</code>), Node.js — ~10 тыс., Java — от тысяч до десятков тысяч при стеке 512 КБ–1 МБ, у горутины Go стек растёт до 1 ГБ. Подробнее — в «<a href="/stack-and-heap/">Стеке и куче</a>».</p>
+    <div class="quiz" data-demo="quiz">
+      <p class="q">В двоичное дерево поиска вставили 5000 ключей по возрастанию (id из базы). Что сделает рекурсивный <code>dfs</code> на CPython?</p>
+      <button class="opt text">Отработает за O(n), как обычно</button>
+      <button class="opt text" data-correct>Упадёт с <code>RecursionError</code></button>
+      <button class="opt text">Отработает, но за O(n²)</button>
+      <button class="opt text">Уронит интерпретатор с segfault</button>
+      <div class="explain">Ключи по возрастанию превращают дерево в цепочку глубиной 5000, а лимит — 1000 кадров. <code>sys.setrecursionlimit(10**6)</code> спасает не всегда: кончится уже стек потока на C, и тогда действительно будет segfault. Надёжно — явный стек или сбалансированное дерево.</div>
+    </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Двоичное дерево поиска</h2>
+      <p class="lead">Слева от узла — меньшие ключи, справа — большие. Поиск, вставка и удаление идут по одному пути от корня — O(h). В сбалансированном дереве h ≈ log₂ n: 20 шагов на миллион ключей.</p>
+      <ul class="points">
+        <li>В отличие от хеш-таблицы, дерево хранит порядок: минимум, «следующий после x», диапазон [a, b] — тоже O(log n).</li>
+        <li>Удаление узла с двумя детьми: его место занимает следующий по порядку ключ — самый левый в правом поддереве.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="bst"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Повороты</h2>
+      <p class="lead">Поворот поднимает узел на место родителя и перевешивает одно поддерево. Порядок ключей не меняется, а высота — меняется. Все самобалансирующиеся деревья держат форму только поворотами — за O(1) каждый.</p>
+      <p class="note">Нажмите на узел, чтобы поднять его над родителем. Превратите цепочку 1…7 в дерево высоты 3. Подсказка: начните с середины.</p>
+    </div>
+    <div class="demo" data-demo="rotate"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Отсортированный вход и балансировка</h2>
+      <p class="lead">Ключи по возрастанию — самый частый вход в жизни: автоинкрементные id, время, имена из отсортированного файла. Обычное дерево поиска превращается в список, и все операции — O(n).</p>
+      <ul class="points">
+        <li><b>АВЛ</b>: высоты поддеревьев любого узла отличаются не больше чем на 1, h ≤ 1,44·log₂ n. Строже — быстрее поиск.</li>
+        <li><b>Красно-чёрное</b>: никакой путь от корня до листа не длиннее другого вдвое, h ≤ 2·log₂ n. Не больше 2 поворотов на вставку и 3 на удаление — поэтому его любят библиотеки и ядро.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="balance"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Где живут сбалансированные деревья</h2>
+    <div class="cards">
+      <div class="card"><span class="tech">Java · C++</span><p><code>TreeMap</code>, <code>TreeSet</code>, <code>std::map</code>, <code>std::set</code> — красно-чёрные деревья. <code>floorKey</code>, <code>ceilingKey</code>, <code>subMap</code>, <code>lower_bound</code> — поиск соседей и диапазонов за O(log n).</p></div>
+      <div class="card"><span class="tech">Java HashMap</span><p>Если в одной корзине набралось 8 коллизий (и таблица не меньше 64), цепочка превращается в красно-чёрное дерево — защита от атаки подобранными ключами.</p></div>
+      <div class="card"><span class="tech">Linux</span><p>Планировщик CFS и сменивший его в 6.6 EEVDF держат готовые задачи в КЧ-дереве — следующая берётся с левого края. В КЧ-деревьях лежат дескрипторы epoll и таймеры hrtimer.</p></div>
+      <div class="card"><span class="tech">Linux 6.1+</span><p>Области памяти процесса (VMA) переехали из КЧ-дерева в maple tree — разновидность B-дерева: меньше промахов кэша. Об этих областях — в «<a href="/virtual-memory/">Виртуальной памяти</a>».</p></div>
+      <div class="card"><span class="tech">nginx · сети</span><p>Таймеры соединений в nginx — КЧ-дерево: ближайший таймаут — самый левый узел.</p></div>
+      <div class="card"><span class="tech">Python · Go · JS</span><p>Встроенного упорядоченного словаря нет. Python — <code>sortedcontainers</code> (не дерево, а список списков с <code>bisect</code>), Go — <code>google/btree</code>, <code>tidwall/btree</code>. Часто хватает сортировки и <code>bisect</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Атакующий отправил в Java-сервис 10&nbsp;000 строковых ключей с одинаковым <code>hashCode()</code>, и все они легли в <code>HashMap</code>. Сколько стоит поиск одного ключа в Java 8+?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">O(1), как всегда в хеш-таблице</button>
+      <button class="opt text">O(n): 10 000 сравнений по цепочке</button>
+      <button class="opt text" data-correct>O(log n): около 14 сравнений</button>
+      <button class="opt text">HashMap бросит исключение о переполнении корзины</button>
+      <div class="explain">В Java 7 это была бы цепочка на 10 000 элементов — классическая DoS-атака на парсер параметров запроса. С Java 8 корзина длиннее 8 превращается в красно-чёрное дерево, а строки сравнимы — поиск за log₂ 10 000 ≈ 14 шагов. Python и Go защищаются иначе: случайной солью хеша при старте процесса. Подробнее о хеш-таблицах — в <a href="/arrays-hashing/">«Массивах и хешировании»</a>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>B-дерево: узел размером со страницу</h2>
+      <p class="lead">Диск читает страницами по 4–16 КБ, и случайное чтение стоит как тысячи сравнений в памяти. Поэтому в узел B-дерева кладут сотни ключей: узел = страница, ветвление — сотни, высота — 3–4 даже для миллиардов строк.</p>
+      <p class="note">Верхние уровни занимают мегабайты и всегда в кэше. Даже в RAM B-дерево обгоняет двоичное: узел — несколько кэш-линий подряд, а не промах на каждом шаге. Двигайте ползунки. B-дерево в Postgres — подробно в «<a href="/postgres-internals/">PostgreSQL изнутри</a>».</p>
+    </div>
+    <div class="demo" data-demo="fanout"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>B+дерево: вставка и деление узлов</h2>
+      <ul class="points">
+        <li>Ключи с данными — только в листьях, внутренние узлы — навигация. Так в них помещается больше ключей.</li>
+        <li>Листья связаны в список: диапазон — это спуск плюс проход по листьям.</li>
+        <li>Переполненный узел делится пополам, разделитель уходит в родителя. Делится корень — дерево растёт вверх, и все листья всегда на одной глубине.</li>
+      </ul>
+      <p class="note">LSM-дерево (RocksDB, Cassandra) отвечает на другой вопрос — как быстрее писать: копит записи в памяти и сливает отсортированные файлы. О нём — в «<a href="/probabilistic-structures/">Вероятностных структурах</a>» вместе с фильтрами Блума.</p>
+    </div>
+    <div class="demo" data-demo="bplus"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Двоичная куча</h2>
+      <p class="lead">Полное двоичное дерево, где родитель не больше детей. Хранится в массиве без указателей: дети <code>i</code> — <code>2i+1</code> и <code>2i+2</code>, родитель — <code>(i−1)//2</code>. Минимум всегда в <code>a[0]</code>.</p>
+      <ul class="points">
+        <li><b>push</b>: в конец и просеивание вверх — O(log n).</li>
+        <li><b>pop</b>: последний на место корня и просеивание вниз — O(log n).</li>
+        <li><b>heapify</b>: просеять вниз все узлы от середины к началу — O(n), а не O(n log n).</li>
+      </ul>
+      <p class="note">Куча не отсортирована: она знает только минимум. Зато вставка дешевле, чем в дерево поиска, и нет ни одного указателя — данные лежат подряд.</p>
+    </div>
+    <div class="demo" data-demo="heap"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Три приёма с кучей</h2>
+      <ul class="points">
+        <li><b>Top-K</b>: min-куча размера K. Новый элемент больше корня — заменяет его. O(n log K) времени и O(K) памяти, поток можно читать по одному элементу.</li>
+        <li><b>Слияние K отсортированных списков</b>: куча из голов списков. Так работают <code>heapq.merge</code>, внешняя сортировка и слияние сегментов в LSM-базах.</li>
+        <li><b>Медиана потока</b>: max-куча для меньшей половины, min-куча для большей; размеры отличаются не больше чем на 1.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="streams"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Кучи на практике</h2>
+      <ul class="points">
+        <li><b>Таймеры</b>: в Go runtime — 4-арная куча на каждом P (<code>time.Sleep</code>, <code>time.After</code>, контексты с дедлайном). В libuv и Node.js — двоичная куча: цикл событий спит до срока <code>a[0]</code>. В asyncio <code>call_later</code> кладёт таймер в <code>heapq</code>.</li>
+        <li><b>Очереди с приоритетом и планировщики</b>: <code>PriorityQueue</code> и <code>DelayQueue</code> в Java, отложенные задачи в очередях.</li>
+        <li><b>Графы</b>: Дейкстра, A*, алгоритм Прима — подробнее в «<a href="/graphs/">Графах</a>».</li>
+      </ul>
+      <p class="note">Удалить из кучи произвольный элемент дорого: сначала его нужно найти за O(n). Поэтому отменённые таймеры только помечают и выбрасывают при извлечении — так делают asyncio и Go runtime.</p>
+    </div>
+<pre class="code"><code class="lang-py">import heapq
+
+tasks = []   # куча — это обычный list
+# кортежи сравниваются по первому полю,
+# seq разрешает ничьи и сохраняет порядок
+heapq.heappush(tasks, (deadline, seq, job))
+deadline, _, job = heapq.heappop(tasks)
+
+heapq.heapify(data)          # O(n), на месте
+heapq.nlargest(10, rows, key=lambda r: r.ms)
+for line in heapq.merge(log1, log2, log3):
+    ...                      # слияние за O(n log k)
+
+# max-куча: кладите -x
+# (в Python 3.14+ есть heapq.heappush_max)</code></pre>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Лог на 10&nbsp;млрд строк читается потоком. Нужны 100 самых медленных запросов, памяти — несколько мегабайт. Какая структура?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Max-куча из всех строк, потом 100 раз pop</button>
+      <button class="opt text">Max-куча на 100 элементов</button>
+      <button class="opt text" data-correct>Min-куча на 100 элементов</button>
+      <button class="opt text">Сбалансированное дерево из всех строк</button>
+      <div class="explain">В корне min-кучи — самый быстрый из 100 медленных, то есть первый кандидат на вылет. Новая строка медленнее корня — заменяем его за O(log 100), иначе отбрасываем за O(1). Итого O(n log K) и память на 100 элементов. Max-куча на 100 держала бы в корне не того: выкинуть пришлось бы минимум, а он не в корне. Это ровно <code>heapq.nlargest(100, ...)</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Префиксное дерево (trie)</h2>
+      <p class="lead">Строки хранятся по символам: путь от корня — префикс, общие префиксы хранятся один раз. Найти слово или все слова с префиксом — O(длины префикса), сколько бы слов ни было в словаре.</p>
+      <ul class="points">
+        <li>Автодополнение: в узле можно хранить готовый топ подсказок.</li>
+        <li>HTTP-роутеры (httprouter и Gin, chi, Fastify) и Redis Streams — radix-дерево, сжатый trie: цепочки без ветвлений склеены в одно ребро.</li>
+        <li>Цена — память: узел на каждую букву плюс таблица переходов.</li>
+      </ul>
+      <p class="note">Печатайте в поле — подсказки обновляются на лету. Добавьте своё слово.</p>
+    </div>
+    <div class="demo" data-demo="trie"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Маршрутизация: самый длинный префикс</h2>
+      <p class="lead">Маршрутизатор выбирает самый длинный подходящий префикс: <code>10.1.2.0/24</code> важнее <code>10.0.0.0/8</code>, а <code>0.0.0.0/0</code> — маршрут по умолчанию. Это trie по битам адреса: идём от старшего бита и запоминаем последний совпавший маршрут.</p>
+      <p class="note">В Linux маршруты IPv4 лежат в сжатом LC-trie (<code>/proc/net/fib_trie</code>), в аппаратных маршрутизаторах — в TCAM-памяти. Тот же поиск делают файрволы и GeoIP. Выберите адрес и жмите «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="lpm"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Деревья отрезков и Фенвика</h2>
+      <p class="lead">Нужна сумма или минимум на отрезке массива, который меняется. Префиксные суммы отвечают за O(1), но обновление стоит O(n). Дерево Фенвика и дерево отрезков делают и то и другое за O(log n).</p>
+      <ul class="points">
+        <li><b>Фенвик</b>: 10 строк, ячейка <code>i</code> хранит сумму блока длиной в младший бит <code>i</code>. Для сумм и любых обратимых операций.</li>
+        <li><b>Дерево отрезков</b>: min, max, НОД, «присвоить на отрезке» с ленивыми обновлениями.</li>
+        <li>В продакшене редки — рейтинг в Redis (<code>ZRANK</code>) держится на skip list. На собеседованиях — в задачах hard.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">class Fenwick:                 # индексы с 1
+    def __init__(self, n):
+        self.t = [0] * (n + 1)
+
+    def add(self, i, delta):   # a[i] += delta
+        while i &lt; len(self.t):
+            self.t[i] += delta
+            i += i &amp; -i        # следующий блок с i
+
+    def prefix(self, i):       # a[1] + … + a[i]
+        s = 0
+        while i > 0:
+            s += self.t[i]
+            i -= i &amp; -i        # снять младший бит
+        return s
+
+# сумма на [l, r]: prefix(r) - prefix(l - 1)</code></pre>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>На собеседовании: как узнать задачу</h2>
+    <div class="sig" role="table">
+      <div class="sig-row" role="row"><span role="cell">«по уровням», «правый вид», «минимальная глубина»</span><b role="cell">BFS с очередью; размер уровня = <code>len(q)</code> в начале итерации</b></div>
+      <div class="sig-row" role="row"><span role="cell">«проверить BST», «k-й наименьший», «отсортированный вывод»</span><b role="cell">in-order; для проверки — границы (lo, hi)</b></div>
+      <div class="sig-row" role="row"><span role="cell">«LCA», «диаметр», «путь с макс. суммой», «сбалансировано ли»</span><b role="cell">post-order: функция возвращает из поддерева 1–2 значения</b></div>
+      <div class="sig-row" role="row"><span role="cell">«сериализовать и восстановить дерево»</span><b role="cell">pre-order с маркером пустого узла (<code>#</code>) или BFS</b></div>
+      <div class="sig-row" role="row"><span role="cell">«k наибольших / ближайших», «слить k списков», «медиана потока»</span><b role="cell">куча размера k или две кучи</b></div>
+      <div class="sig-row" role="row"><span role="cell">«префикс», «словарь», «найти слова в сетке букв»</span><b role="cell">trie (+ DFS по сетке)</b></div>
+      <div class="sig-row" role="row"><span role="cell">«сумма на отрезке» с изменениями</span><b role="cell">Фенвик или дерево отрезков</b></div>
+    </div>
+    <p class="note">Сначала уточните: двоичное ли дерево, дерево ли поиска, бывают ли дубликаты, может ли оно быть пустым и насколько глубоким (рекурсия или стек). Сложность почти всегда O(n) по времени и O(h) по памяти — проговорите это.</p>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Разбор: проверка BST, k-й, LCA</h2>
+      <p class="lead">Классическая ловушка — проверять только «левый ребёнок меньше, правый больше». Нужно передавать вниз границы: всё левое поддерево меньше узла, а не только его ребёнок.</p>
+<pre class="code"><code class="lang-py">inf = float('inf')
+
+def valid(node, lo=-inf, hi=inf):
+    if not node:
+        return True
+    if not lo &lt; node.val &lt; hi:
+        return False
+    return (valid(node.left, lo, node.val) and
+            valid(node.right, node.val, hi))</code></pre>
+      <p class="note">Переключайте задачи и жмите «Шаг»: первые две идут на дереве с ловушкой, две другие — на правильном BST.</p>
+    </div>
+    <div class="demo" data-demo="validate"></div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как увидеть у себя</h2>
+      <ul class="points">
+        <li>Не пишите свою кучу и дерево — берите <code>heapq</code>, <code>bisect</code>, <code>sortedcontainers</code>, <code>TreeMap</code>, <code>container/heap</code>.</li>
+        <li>Обход чужих деревьев (JSON, AST, каталоги) — итеративно, если глубину задаёт пользователь.</li>
+        <li>Индекс по случайному UUID пишет в случайные листья B-дерева и делит страницы по всему индексу. UUIDv7 (по времени) вставляется в правый край.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain"># AST и байткод Python
+echo 'x = a + b * 2' | python3 -m ast
+echo 'x = a + b * 2' | python3 -m dis
+
+# Linux: trie маршрутов и longest prefix match
+head -30 /proc/net/fib_trie
+ip route get 10.1.2.7
+
+# очереди планировщика (КЧ-деревья задач)
+sudo cat /sys/kernel/debug/sched/debug | less
+
+# Postgres: высота B-дерева индекса
+CREATE EXTENSION pageinspect;
+SELECT level, fastroot FROM bt_metap('orders_pkey');
+
+# DOM в консоли браузера: обход в глубину
+document.querySelectorAll('*').length</code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Иерархия — это дерево, а работа с деревом — обход. Pre-order — родитель первым, post-order — ответ из детей, BFS — по уровням.</li>
+      <li>Рекурсия ограничена стеком: на вырожденных и чужих деревьях нужен явный стек.</li>
+      <li>Дерево поиска хранит порядок, но без балансировки вырождается на отсортированном входе. Балансируют поворотами: АВЛ, красно-чёрное.</li>
+      <li>На диске — B+деревья: узел = страница, ветвление в сотни, 3–4 уровня на миллиарды строк.</li>
+      <li>Куча — массив без указателей: минимум за O(1), вставка за O(log n). Таймеры, планировщики, top-K, слияние, Дейкстра.</li>
+      <li>Trie — для префиксов: автодополнение, роутеры, маршрутизация IP.</li>
+    </ul>
+    <p class="proverb">Видите иерархию — ищите обход. Видите «k лучших» — берите кучу. Видите префиксы — стройте trie.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="common.js"></script>
+<script src="demos-trees.js"></script>
+<script src="demos-more.js"></script>
+</body>
+</html>

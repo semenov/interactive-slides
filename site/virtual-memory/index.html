@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Виртуальная память — интерактивная презентация</title>
+  <meta name="description" content="Как устроена виртуальная память: страницы и таблицы страниц, TLB и huge pages, page faults и ленивое выделение, overcommit и OOM killer, copy-on-write после fork, swap, page cache, RSS и PSS, лимиты контейнеров.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <svg class="hero-vm" viewBox="0 0 340 300" aria-hidden="true">
+      <text x="45" y="20" class="hv-t">процесс A</text>
+      <text x="170" y="20" class="hv-t">RAM</text>
+      <text x="295" y="20" class="hv-t">процесс B</text>
+      <g class="hv-links">
+        <path d="M80 50 C125 50 125 92 150 92"/>
+        <path d="M80 100 C125 100 125 172 150 172"/>
+        <path d="M80 150 C125 150 125 252 150 252"/>
+        <path d="M80 200 C125 200 125 132 150 132"/>
+        <path d="M260 50 C215 50 215 92 190 92" class="shared"/>
+        <path d="M260 100 C215 100 215 52 190 52"/>
+        <path d="M260 150 C215 150 215 212 190 212"/>
+      </g>
+      <g class="hv-pages">
+        <rect x="10" y="35" width="70" height="30" rx="5"/><text x="45" y="55">0x401000</text>
+        <rect x="10" y="85" width="70" height="30" rx="5"/><text x="45" y="105">0x1c3a000</text>
+        <rect x="10" y="135" width="70" height="30" rx="5"/><text x="45" y="155">0x7f3a1000</text>
+        <rect x="10" y="185" width="70" height="30" rx="5"/><text x="45" y="205">0x7ffd1000</text>
+        <rect x="10" y="235" width="70" height="30" rx="5" class="none"/><text x="45" y="255" class="dim">не занято</text>
+        <rect x="260" y="35" width="70" height="30" rx="5"/><text x="295" y="55">0x401000</text>
+        <rect x="260" y="85" width="70" height="30" rx="5"/><text x="295" y="105">0x1c3a000</text>
+        <rect x="260" y="135" width="70" height="30" rx="5"/><text x="295" y="155">0x7ffd1000</text>
+        <rect x="260" y="185" width="70" height="30" rx="5" class="none"/><text x="295" y="205" class="dim">не занято</text>
+        <rect x="260" y="235" width="70" height="30" rx="5" class="none"/><text x="295" y="255" class="dim">не занято</text>
+      </g>
+      <g class="hv-frames">
+        <rect x="150" y="40" width="40" height="24" rx="3" class="b"/>
+        <rect x="150" y="80" width="40" height="24" rx="3" class="ab"/>
+        <rect x="150" y="120" width="40" height="24" rx="3" class="a"/>
+        <rect x="150" y="160" width="40" height="24" rx="3" class="a"/>
+        <rect x="150" y="200" width="40" height="24" rx="3" class="b"/>
+        <rect x="150" y="240" width="40" height="24" rx="3" class="a"/>
+        <rect x="150" y="280" width="40" height="14" rx="3" class="f"/>
+      </g>
+    </svg>
+    <div class="stack">
+      <h1>Виртуальная память</h1>
+      <p class="lead">Почему у каждого процесса своё адресное пространство, как адрес превращается в физический, откуда берутся page faults, почему <code>malloc</code> на гигабайт ничего не стоит, кого убивает OOM killer и что на самом деле показывают RSS и <code>free</code>.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Зачем виртуальная память</h2>
+      <ul class="points">
+        <li>Программа работает с виртуальными адресами. Процессор на каждом обращении переводит их в физические по таблице страниц, которую ведёт ядро.</li>
+        <li>Изоляция: у каждого процесса своя таблица. Чужую память нельзя даже адресовать — её просто нет в вашей таблице.</li>
+        <li>Каждый процесс видит всё адресное пространство как своё: один и тот же адрес в двух процессах — разные байты. А общий код библиотек в RAM лежит один раз.</li>
+      </ul>
+      <p class="note">Нажимайте на операции. Код и libc у процессов общие, данные — свои.</p>
+    </div>
+    <div class="demo" data-demo="spaces"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Карта адресного пространства</h2>
+      <p class="lead">На x86-64 процессу доступны младшие 128 ТБ адресов. В них ядро раскладывает области: код программы, куча, библиотеки и <code>mmap</code>, стек. Между ними — огромные пустые промежутки. Каждая область — VMA со своими правами.</p>
+      <p class="note">ASLR при каждом запуске сдвигает области на случайное смещение, чтобы эксплойт не знал заранее, где лежат код и стек. Нажмите на область или перезапустите процесс.</p>
+    </div>
+    <div class="demo" data-demo="layout"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Страницы и фреймы</h2>
+      <ul class="points">
+        <li>Виртуальное пространство нарезано на страницы по 4 КБ, физическая память — на фреймы того же размера.</li>
+        <li>Младшие 12 бит адреса — смещение внутри страницы, оно не меняется. Остальные — номер страницы, его и переводят.</li>
+        <li>Запись таблицы страниц (PTE) — 8 байт: номер фрейма и флаги. Флаги — это рычаги, на которых ядро строит всё остальное: ленивое выделение, swap, copy-on-write, защиту кода.</li>
+      </ul>
+    </div>
+    <div class="pte-box">
+      <div class="pte" aria-label="Запись таблицы страниц, 64 бита">
+        <span class="f nx">NX<small>63</small></span>
+        <span class="f pfn">номер фрейма<small>51…12</small></span>
+        <span class="f">D<small>6</small></span>
+        <span class="f">A<small>5</small></span>
+        <span class="f">U<small>2</small></span>
+        <span class="f">W<small>1</small></span>
+        <span class="f p">P<small>0</small></span>
+      </div>
+      <dl class="pte-legend">
+        <dt>P</dt><dd>present: страница в памяти. 0 — любое обращение вызывает page fault, и ядро решает, что делать.</dd>
+        <dt>W</dt><dd>можно писать. Снимают для кода и для страниц после <code>fork</code> — так работает copy-on-write.</dd>
+        <dt>U</dt><dd>доступна из пользовательского режима. Страницы ядра — без него.</dd>
+        <dt>A</dt><dd>accessed: процессор ставит при обращении. По нему ядро ищет давно не используемые страницы.</dd>
+        <dt>D</dt><dd>dirty: была запись. Такую страницу файла надо записать на диск, прежде чем выбросить.</dd>
+        <dt>NX</dt><dd>запрет исполнения: данные и стек нельзя выполнить как код.</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Четырёхуровневая таблица страниц</h2>
+      <p class="lead">Плоская таблица на 2<sup>36</sup> страниц занимала бы 512 ГБ на процесс. Поэтому она — дерево: 48 бит адреса делятся на четыре индекса по 9 бит и смещение. Каждый уровень — страница из 512 записей. Ветки, где ничего не отображено, просто не создаются.</p>
+      <p class="note">Корень дерева — в регистре CR3, при переключении процесса ядро меняет его. Введите адрес или выберите готовый и пройдите по шагам.</p>
+    </div>
+    <div class="demo" data-demo="walk"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>TLB: кэш переводов</h2>
+      <p class="lead">Четыре обращения к памяти ради одного — слишком дорого. Процессор кэширует готовые переводы в TLB: десятки записей в L1 и полторы-две тысячи в L2. Попадание бесплатно, промах — обход таблиц, 20–100+ тактов.</p>
+      <p class="note">Последовательный проход почти всегда попадает: 512 элементов по 8 байт на страницу. Случайный доступ к большому набору страниц промахивается. Выберите шаблон доступа и размер TLB. Здесь TLB упрощён: полностью ассоциативный, вытеснение LRU.</p>
+    </div>
+    <div class="demo" data-demo="tlb"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Huge pages</h2>
+      <ul class="points">
+        <li>Страница 2 МБ — та же запись TLB покрывает в 512 раз больше памяти, и в дереве на уровень меньше.</li>
+        <li>Явные: <code>hugetlbfs</code>, заранее зарезервированные. Так делают Postgres (<code>huge_pages</code>), JVM (<code>-XX:+UseLargePages</code>), DPDK.</li>
+        <li>Прозрачные (THP): ядро само собирает 2 МБ страницы. Redis и MongoDB советуют их выключать: всплески задержек при сборке и копирование 2 МБ вместо 4 КБ при copy-on-write.</li>
+      </ul>
+      <p class="note">Таблицы страниц — у каждого процесса свои. 100 процессов Postgres, отображающих 32 ГБ общей памяти, — это гигабайты одних таблиц.</p>
+    </div>
+    <div class="demo" data-demo="huge"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Page fault</h2>
+      <p class="lead">Если в PTE нет бита P или не хватает прав, процессор прерывает инструкцию и передаёт управление ядру. Ядро смотрит, в какую VMA попал адрес, и решает: дать страницу и повторить инструкцию или послать <code>SIGSEGV</code>.</p>
+      <ul class="points">
+        <li><b>Minor</b> — диск не нужен: выдать обнулённый фрейм, подключить страницу из page cache, скопировать для CoW. Около микросекунды.</li>
+        <li><b>Major</b> — надо читать с диска или из swap. Поток спит: 100 мкс на NVMe, 10 мс на HDD.</li>
+      </ul>
+      <p class="note">Выберите ситуацию — увидите путь обращения.</p>
+    </div>
+    <div class="demo" data-demo="fault"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Ленивое выделение</h2>
+      <p class="lead"><code>malloc(1 ГБ)</code> — это <code>mmap</code>: ядро только создаёт VMA. Таблицы пусты, памяти не занято. Фрейм появляется при первой записи в страницу — через minor fault.</p>
+      <ul class="points">
+        <li>VSZ — сколько адресов зарезервировано, RSS — сколько страниц реально в RAM.</li>
+        <li>Go, JVM и V8 резервируют гигабайты адресов заранее, поэтому VSZ у них огромный. Это нормально.</li>
+        <li>Нужна память сразу, без fault'ов на горячем пути — <code>MAP_POPULATE</code>, <code>mlock</code>, <code>-XX:+AlwaysPreTouch</code>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="lazy"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис на Go на машине с 4 ГБ RAM. <code>ps</code> показывает VSZ 20 ГБ и RSS 300 МБ. Что происходит?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Утечка памяти: VSZ растёт, скоро придёт OOM killer</button>
+      <button class="opt text">Ядро выгрузило почти 20 ГБ в swap</button>
+      <button class="opt text" data-correct>Ничего страшного: адреса зарезервированы, а занято 300 МБ</button>
+      <button class="opt text">Ошибка учёта: VSZ не может быть больше RAM</button>
+      <div class="explain">VSZ — сумма размеров всех VMA, включая зарезервированные, но ни разу не тронутые области: арены рантайма, стеки потоков, отображённые файлы. Физическую память занимает только RSS. Следить надо за RSS — и за PSS, если процессы делят память. Swap здесь ни при чём: выгруженное видно в <code>VmSwap</code> в <code>/proc/PID/status</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Overcommit и OOM killer</h2>
+      <ul class="points">
+        <li>Раз память выдаётся лениво, ядро обещает больше, чем есть. <code>vm.overcommit_memory</code>: 0 — отказывает только в явно невозможном, 1 — никогда, 2 — строгий учёт до <code>CommitLimit</code>.</li>
+        <li>Когда обещания пора выполнять, а память кончилась, ядро сначала вытесняет кэш. Не помогло — OOM killer убивает процесс с наибольшим <code>oom_score</code>: обычно самый большой, а не виноватый.</li>
+        <li><code>malloc</code> почти никогда не возвращает NULL. Вместо ошибки в коде — <code>SIGKILL</code> и строка в <code>dmesg</code>.</li>
+      </ul>
+      <p class="note">RAM 8 ГБ, swap нет. Выделяйте и заполняйте память воркером.</p>
+    </div>
+    <div class="demo" data-demo="oom"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Общие страницы: RSS, PSS, USS</h2>
+      <p class="lead">Библиотеки и файлы отображаются через <code>mmap</code>: страница файла лежит в page cache один раз и подключается в таблицы всех процессов. Страницы, унаследованные через <code>fork</code>, тоже общие, пока их не меняют.</p>
+      <ul class="points">
+        <li>RSS считает общие страницы в каждом процессе целиком. Сумма RSS по воркерам — сильно завышена.</li>
+        <li>PSS делит общую страницу между всеми, кто её использует. Сумма PSS — реальное потребление.</li>
+        <li>USS — только своё: столько освободится, если процесс убить.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="rsspss"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2><code>fork</code> и copy-on-write</h2>
+      <p class="lead"><code>fork</code> не копирует память. Ребёнок получает копию таблицы страниц, указывающую на те же фреймы, а ядро снимает у всех этих страниц бит W. Первая запись — page fault: ядро копирует одну страницу, и у каждого появляется своя.</p>
+      <p class="note">Поэтому <code>fork</code> процесса на 10 ГБ занимает миллисекунды — копируется только таблица. Нажмите <code>fork()</code>, затем на страницы, чтобы писать в них.</p>
+    </div>
+    <div class="demo" data-demo="cow"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Copy-on-write в жизни</h2>
+      <ul class="points">
+        <li><b>Redis BGSAVE</b>: форк пишет снимок, родитель продолжает принимать запись. Каждая изменённая страница копируется — при интенсивной записи память временно растёт до двух раз. Отсюда советы: оставлять запас RAM, <code>vm.overcommit_memory = 1</code> (иначе <code>fork</code> большого процесса может не пройти) и выключить THP.</li>
+        <li><b>Python prefork</b> (gunicorn <code>--preload</code>, uWSGI, multiprocessing): каждое чтение объекта меняет счётчик ссылок, а сборщик мусора пишет в заголовки объектов. Страницы копируются, хотя код «только читает».</li>
+        <li><b>Node</b> <code>cluster</code> и Java не форкают с данными: каждый процесс загружает всё сам.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+# gunicorn.conf.py — сохранить общие страницы
+import gc
+gc.disable()          # конфиг читается до загрузки
+                      # приложения: меньше дыр в памяти
+preload_app = True    # загрузить приложение до fork
+
+def pre_fork(server, worker):
+    gc.freeze()       # объекты мастера — вне GC
+
+def post_fork(server, worker):
+    gc.enable()
+
+# Большие данные — не миллионом объектов,
+# а одним буфером: numpy, array, mmap.
+# Счётчик ссылок у буфера один, страницы общие.
+</code></pre>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Мастер gunicorn с <code>--preload</code> загрузил словарь на 2 ГБ и форкнул 8 воркеров. Сразу после старта занято около 2,5 ГБ, через час — 17 ГБ. Воркеры словарь только читают. Что случилось?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Утечка памяти в воркерах</button>
+      <button class="opt text">Page cache заполнился файлами словаря</button>
+      <button class="opt text" data-correct>Чтения меняют счётчики ссылок, и copy-on-write скопировал страницы в каждый воркер</button>
+      <button class="opt text">Каждый воркер при старте заново загрузил словарь</button>
+      <div class="explain">В CPython «прочитать» — значит взять ссылку: <code>Py_INCREF</code> пишет в заголовок объекта, и страница копируется. Плюс сборщик мусора обходит объекты и тоже пишет в них. Через час почти каждая страница словаря скопирована в каждый из 8 воркеров. <code>gc.freeze()</code> убирает часть записей; надёжнее хранить данные одним буфером — numpy, <code>mmap</code> — или в отдельном сервисе.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Swap и трэшинг</h2>
+      <ul class="points">
+        <li>Swap — место на диске для анонимных страниц. Редко используемые страницы уходят туда, и RAM достаётся кэшу и тем, кому нужнее.</li>
+        <li>Пока рабочий набор помещается в RAM, swap почти бесплатен. Как только нет — каждое обращение может стать major fault, и система «молотит» диском.</li>
+        <li><code>vm.swappiness</code> — насколько охотно выгружать анонимную память вместо сброса кэша. Признак трэшинга — ненулевые <code>si</code>/<code>so</code> в <code>vmstat 1</code> и рост PSI в <code>/proc/pressure/memory</code>.</li>
+      </ul>
+      <p class="note">RAM 16 ГБ, обращения случайны и равномерны — худший случай. Двигайте размер рабочего набора.</p>
+    </div>
+    <div class="demo" data-demo="thrash"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Page cache и <code>free</code></h2>
+      <p class="lead">Всё, что читается и пишется через файлы, оседает в page cache, и ядро держит его, пока память ни на что другое не нужна. Поэтому <code>free</code> на сервере почти всегда маленький — и это хорошо. Смотрите на <code>available</code>: сколько можно выделить, вытеснив чистый кэш.</p>
+      <p class="note">Грязные страницы перед вытеснением надо записать на диск. Подробнее о кэше и <code>fsync</code> — в <a href="/files-storage/">презентации про файлы</a>.</p>
+    </div>
+    <div class="demo" data-demo="free"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Контейнеры и лимиты памяти</h2>
+      <ul class="points">
+        <li>Лимит контейнера — <code>memory.max</code> в cgroup v2. В него входят анонимная память, page cache, <code>tmpfs</code> и часть памяти ядра. Превысили и вытеснять нечего — OOM внутри cgroup, в Kubernetes — <code>OOMKilled</code>, код выхода 137.</li>
+        <li>Рантайм должен знать лимит, а не RAM хоста. JVM с 8u191 и 10 читает cgroup; куча по умолчанию — 25% лимита, задают <code>-XX:MaxRAMPercentage=75</code>.</li>
+        <li>Go не ограничивает кучу сам: <code>GOMEMLIMIT</code> ≈ 90% лимита, иначе GC позволит куче вырасти вдвое. Node: <code>--max-old-space-size</code>. Python кучу не ограничивает вовсе: считайте воркеры × RSS.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ cd /sys/fs/cgroup     # изнутри контейнера
+$ cat memory.max memory.current
+1073741824
+1004535808
+$ grep -E '^(anon|file|shmem) ' memory.stat
+anon 612368384
+file 371195904     # page cache: вытесняемый
+shmem 0
+$ cat memory.events
+low 0
+high 0
+max 1840           # упирались в лимит
+oom 2
+oom_kill 2         # убито процессов
+
+# Kubernetes считает working set:
+# usage − неактивный файловый кэш
+</code></pre>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Под с лимитом 512 МБ. Приложение занимает 200 МБ и пишет большой лог в файл. График <code>container_memory_usage_bytes</code> ползёт к 512 МБ. Убьют ли под?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Да: дойдёт до лимита — придёт OOM killer</button>
+      <button class="opt text" data-correct>Нет: у лимита ядро вытеснит чистый page cache</button>
+      <button class="opt text">Нет: page cache в лимит не входит</button>
+      <button class="opt text">Да, если на узле нет swap</button>
+      <div class="explain">Page cache записывается на счёт cgroup и входит в usage — отсюда пугающий график. Но чистые страницы ядро вытесняет, как только cgroup подходит к лимиту; грязные сначала дописывает на диск. OOM будет, только если анонимной памяти, <code>tmpfs</code> и грязных страниц больше лимита. Поэтому алерты строят на <code>container_memory_working_set_bytes</code>, а не на usage.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li>VSZ, RSS, swap процесса — <code>ps</code>, <code>/proc/PID/status</code>. Карта областей — <code>/proc/PID/maps</code> или <code>pmap -x</code>.</li>
+        <li>RSS, PSS, общие и грязные страницы по областям — <code>/proc/PID/smaps</code>, сводка — <code>smaps_rollup</code>, по всем процессам — <code>smem</code>.</li>
+        <li>Page faults — <code>/usr/bin/time -v</code>, <code>perf stat</code>; промахи TLB — <code>perf stat -e dTLB-load-misses</code>.</li>
+        <li>Система: <code>free -m</code>, <code>vmstat 1</code> (si/so — swap, majflt — в <code>sar -B</code>), <code>/proc/meminfo</code>. Кого убили — <code>dmesg | grep -i oom</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ grep -E 'Vm(Size|RSS|Swap)' /proc/4242/status
+VmSize:  20481024 kB     # VSZ
+VmRSS:     307200 kB
+VmSwap:         0 kB
+
+$ cat /proc/4242/smaps_rollup
+Rss:       307200 kB
+Pss:       198410 kB     # честная доля
+Shared_Clean: 141312 kB
+Private_Dirty: 151552 kB
+
+$ /usr/bin/time -v ./app 2>&1 | grep faults
+Major (requiring I/O) page faults: 12
+Minor (reclaiming a frame) page faults: 263841
+
+$ vmstat -S M 1
+ r  b   swpd   free   buff  cache   si   so
+ 3  0      0    412    220  11468    0    0
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Каждый процесс живёт в своём адресном пространстве. Перевод адресов — дерево таблиц страниц плюс TLB; промахи TLB лечат локальностью и huge pages.</li>
+      <li>Память выдаётся лениво: <code>malloc</code> резервирует адреса, фрейм появляется при первой записи. VSZ — обещания, RSS — реальность.</li>
+      <li>Ядро обещает больше, чем есть. Когда счёт предъявлен, приходит OOM killer — и убивает самого большого.</li>
+      <li><code>fork</code> делит страницы до первой записи. Redis BGSAVE и Python-воркеры платят за каждую изменённую страницу.</li>
+      <li>Сумма RSS врёт, считайте PSS. Маленький <code>free</code> — норма, смотрите <code>available</code>. В контейнере рантайму нужно знать лимит.</li>
+    </ul>
+    <p class="proverb">Выделенная память — обещание. Тронутая — счёт.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-sys.js"></script>
+</body>
+</html>

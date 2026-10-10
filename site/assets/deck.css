@@ -49,7 +49,7 @@ html, body { height: 100%; overflow: hidden; }
 .slide .lead { font-size: 1.08em; color: var(--muted); max-width: 60ch; }
 .slide .note { font-size: 0.92em; color: var(--muted); max-width: 60ch; }
 .points { margin: 0; padding-left: 1.1em; display: grid; gap: 0.55em; max-width: 60ch; }
-.points li::marker { color: var(--go); }
+.points li::marker { color: var(--accent); }
 
 .deck-bar {
   display: grid;
@@ -73,7 +73,7 @@ html, body { height: 100%; overflow: hidden; }
 }
 .deck-home svg { width: 20px; height: 20px; }
 .deck-progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
-.deck-progress span { display: block; height: 100%; width: 0; background: var(--go); transition: width 0.3s; }
+.deck-progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
 .deck-count { font-family: var(--mono); font-size: 0.8em; color: var(--muted); min-width: 4.2em; text-align: center; }
 .deck-nav {
   width: 44px;

@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Сортировка и поиск — интерактивная презентация</title>
+  <meta name="description" content="Сортировки вставками, слиянием, быстрая и пирамидальная, introsort и pdqsort, стабильность, Timsort, нижняя граница n log n, radix sort, quickselect, внешняя сортировка, бинарный поиск без ошибок на единицу, sweep line. Где это в базах данных и стандартных библиотеках и как это спрашивают на собеседованиях.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-sort" aria-hidden="true">
+      <div class="hs-bars">
+        <i style="--h:14%"></i><i style="--h:22%"></i><i style="--h:31%"></i><i style="--h:38%"></i><i style="--h:47%"></i><i class="mid" style="--h:55%"></i><i style="--h:63%"></i><i style="--h:71%"></i><i style="--h:80%"></i><i style="--h:90%"></i>
+        <i class="raw" style="--h:60%"></i><i class="raw" style="--h:25%"></i><i class="raw" style="--h:85%"></i><i class="raw" style="--h:40%"></i>
+      </div>
+      <div class="hs-ptrs"><span class="lo">lo</span><span class="md">mid</span><span class="hi">hi</span><span class="todo">ещё не отсортировано</span></div>
+    </div>
+    <div class="stack">
+      <span class="tech">Алгоритмы · 3 из 7</span>
+      <h1>Сортировка и поиск</h1>
+      <p class="lead">Почему база данных всё время сортирует, отчего Python сортирует почти упорядоченный список за линейное время, откуда берётся n log n и как написать бинарный поиск без ошибки на единицу.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки. Примеры кода — на Python.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Зачем сортировать</h2>
+      <ul class="points">
+        <li>В отсортированном ищут за O(log n): бинарный поиск, страница B-дерева, индекс SSTable.</li>
+        <li>Равные и близкие значения оказываются рядом: дубликаты, группы, соседи. Это <code>sort | uniq -c</code> и GroupAggregate в Postgres.</li>
+        <li>Два отсортированных потока сливаются за один проход: merge join, слияние сегментов в LSM-деревьях (RocksDB, Cassandra), shuffle в Spark.</li>
+        <li><code>ORDER BY</code>, оконные функции, <code>CREATE INDEX</code> — тоже сортировка. Её цена видна в <code>EXPLAIN</code>.</li>
+      </ul>
+      <p class="note">Типичный приём: заплатить O(n log n) один раз, а дальше всё делать линейными проходами.</p>
+    </div>
+<pre class="code"><code class="lang-py">
+from itertools import groupby
+
+by_user = lambda r: r.user_id
+logs.sort(key=by_user)            # O(n log n) один раз
+for user, rows in groupby(logs, by_user):
+    print(user, len(list(rows)))  # группы идут подряд
+# без sort groupby склеит только соседние — частый баг
+
+def intersect(a, b):              # оба отсортированы
+    i = j = 0                     # O(n + m)
+    while i &lt; len(a) and j &lt; len(b):
+        if a[i] &lt; b[j]:   i += 1
+        elif a[i] &gt; b[j]: j += 1
+        else:   # совпало — как в merge join
+            yield a[i]; i += 1; j += 1
+</code></pre>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Четыре сортировки на одном массиве</h2>
+      <ul class="points">
+        <li><b>Вставками</b> — O(n²), но на почти отсортированном почти O(n). Поэтому её используют для маленьких кусков внутри «больших» сортировок.</li>
+        <li><b>Слиянием</b> — всегда n log n, стабильна, но нужен O(n) дополнительной памяти.</li>
+        <li><b>Быстрая</b> — на практике самая быстрая: на месте и дружит с кэшем. Но всё решает опорный элемент.</li>
+        <li><b>Пирамидальная</b> — гарантированные n log n на месте, но прыгает по памяти и нестабильна.</li>
+      </ul>
+      <p class="note">Выберите массив и нажмите «Пуск». Здесь быстрая сортировка наивная: опорный элемент — последний. Посмотрите, что с ней будет на отсортированном и обратном массиве.</p>
+    </div>
+    <div class="demo" data-demo="race"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Опорный элемент и худший случай</h2>
+      <ul class="points">
+        <li>Если опорный элемент каждый раз минимальный, разбиение отщепляет один элемент: n уровней рекурсии и n²/2 сравнений.</li>
+        <li>Медиана трёх и случайный выбор спасают на обычных данных. Но для любого детерминированного правила можно построить «убийственный» вход — это вектор DoS.</li>
+        <li><b>Introsort</b> (C++ <code>std::sort</code>, .NET): если рекурсия глубже 2·log₂n — переключаемся на heapsort. Гарантия O(n log n).</li>
+        <li><b>pdqsort</b> (Go 1.19+ <code>slices.Sort</code>, <code>sort.Sort</code>; Rust <code>sort_unstable</code> до ipnsort в 1.81): introsort + отдельная обработка повторов + распознавание уже упорядоченных кусков.</li>
+      </ul>
+      <p class="note">Выберите данные и стратегию. Здесь n = 2000 и считаются настоящие сравнения.</p>
+    </div>
+    <div class="demo" data-demo="pivot"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Стабильность: равные не меняются местами</h2>
+      <p class="lead">Стабильная сортировка сохраняет исходный порядок элементов с равными ключами. Поэтому сортировку по нескольким ключам можно делать проходами: сначала по второстепенному, потом по главному.</p>
+<pre class="code"><code class="lang-py">
+staff.sort(key=lambda e: e.salary, reverse=True)
+# внутри отдела останется порядок по зарплате:
+staff.sort(key=lambda e: e.dept)
+# то же за один проход:
+staff.sort(key=lambda e: (e.dept, -e.salary))
+</code></pre>
+      <p class="note">Стабильны: Python <code>sort</code>, Java для объектов, JS <code>Array.prototype.sort</code> (по стандарту с ES2019), Go <code>slices.SortStableFunc</code>. Нестабильны: Go <code>slices.Sort</code>, C++ <code>std::sort</code>, Java <code>Arrays.sort(int[])</code> — для чисел это и не важно.</p>
+    </div>
+    <div class="demo" data-demo="stable"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Timsort: использовать готовый порядок</h2>
+      <ul class="points">
+        <li>Ищет <b>серии</b> (runs) — уже возрастающие или строго убывающие куски. Убывающие разворачивает.</li>
+        <li>Короткие серии добивает бинарными вставками до <code>minrun</code> (32–64 элемента).</li>
+        <li>Сливает серии со стека так, чтобы их длины оставались сбалансированными.</li>
+        <li><b>Галоп</b>: если одна серия выигрывает 7 раз подряд, Timsort переходит на экспоненциальный поиск и копирует элементы пачками.</li>
+      </ul>
+      <p class="note">Python <code>list.sort</code> (с 3.11 — стратегия слияний powersort), Java для объектов, V8, Android. Отсортированный список — n−1 сравнение. Выберите данные и нажимайте «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="timsort"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Почему быстрее n log n нельзя</h2>
+      <p class="lead">Сортировка сравнениями — это дерево решений: в узле сравнение, в листе готовая перестановка. Листьев не меньше n!, значит, высота дерева — худшее число сравнений — не меньше log₂(n!) ≈ n&nbsp;log₂n −&nbsp;1,44n.</p>
+      <p class="note">Граница — для алгоритмов, которые только сравнивают. Counting и radix sort смотрят на сами ключи и её обходят. Нажмите на перестановку — подсветится путь по дереву для трёх элементов.</p>
+    </div>
+    <div class="demo" data-demo="decision"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Counting и radix sort: без сравнений</h2>
+      <ul class="points">
+        <li><b>Counting sort</b>: ключи из малого диапазона k — посчитать, сколько каждого, и выписать. O(n + k).</li>
+        <li><b>LSD radix sort</b>: d проходов стабильной раскладки по корзинам, от младшего разряда к старшему. O(d·(n + b)). 32-битные числа — 4 прохода по байту.</li>
+        <li>Где встречается: ClickHouse сортирует числовые колонки radix sort, на GPU сортируют им же (CUB), <code>numpy.sort(kind='stable')</code> для целых до 16 бит.</li>
+      </ul>
+      <p class="note">Нажимайте «Шаг»: раскладка по текущему разряду, затем сбор корзин по порядку. Стабильность раскладки — ключ к тому, что следующий проход не портит предыдущий.</p>
+    </div>
+    <div class="demo" data-demo="radix"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Топ-K и k-я порядковая статистика</h2>
+      <ul class="points">
+        <li>Сортировать всё ради десяти лучших — O(n log n) лишней работы.</li>
+        <li><b>Куча на k элементов</b>: O(n log k), работает на потоке. <code>heapq.nlargest(10, items)</code>. Postgres для <code>ORDER BY … LIMIT 10</code> пишет <code>Sort Method: top-N heapsort</code>.</li>
+        <li><b>Quickselect</b>: разбиение как в быстрой сортировке, но рекурсия только в ту часть, где лежит k. В среднем O(n). <code>numpy.partition</code>, C++ <code>nth_element</code> — introselect.</li>
+      </ul>
+      <p class="note">Ищем медиану. Нажимайте «Шаг»: после разбиения опорный элемент стоит на своём окончательном месте, и половину массива можно больше не смотреть.</p>
+    </div>
+    <div class="demo" data-demo="select"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Данные больше памяти: внешняя сортировка</h2>
+      <ul class="points">
+        <li>Фаза 1: читаем столько, сколько влезает в память, сортируем и пишем на диск отсортированную серию.</li>
+        <li>Фаза 2: сливаем k серий сразу. Минимум из k «голов» даёт куча: O(n log k). Если серий слишком много — в несколько проходов.</li>
+        <li>Postgres так сортирует, когда не хватает <code>work_mem</code>: в плане <code>Sort Method: external merge Disk: …</code>. Подробнее о памяти — в <a href="/postgres-internals/#3">«PostgreSQL изнутри»</a>.</li>
+        <li>Так же устроены GNU <code>sort</code> (<code>-S</code> задаёт буфер) и слияние сегментов в LSM-деревьях.</li>
+      </ul>
+      <p class="note">Здесь «память» вмещает 6 записей. Нажимайте «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="external"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Заказы уже отсортированы по дате. Делаем <code>orders.sort(key=lambda o: o.status)</code>. В каком порядке окажутся заказы внутри одного статуса?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">В произвольном: сортировка смотрит только на статус</button>
+      <button class="opt text" data-correct>По дате, как и были</button>
+      <button class="opt text">В обратном порядке дат</button>
+      <button class="opt text">По id, потому что объекты сравниваются по умолчанию</button>
+      <div class="explain">Timsort стабилен: элементы с равным ключом сохраняют исходный порядок. Это гарантия языка, а не случайность реализации, — на ней и держится сортировка в несколько проходов. В Go так ведёт себя только <code>slices.SortStableFunc</code>; обычный <code>slices.SortFunc</code> (pdqsort) порядок равных не сохраняет.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Бинарный поиск без ошибок на единицу</h2>
+<pre class="code"><code class="lang-py">
+def lower_bound(a, x):
+    lo, hi = 0, len(a)     # ответ в [lo, hi]
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if a[mid] &lt; x:
+            lo = mid + 1   # a[..mid] &lt; x
+        else:
+            hi = mid       # a[mid..] &gt;= x
+    return lo              # первый a[i] &gt;= x
+</code></pre>
+      <p class="note">Пишите от инварианта: «слева от <code>lo</code> всё &lt; x, начиная с <code>hi</code> — всё ≥ x». Отрезок каждый раз строго сужается, а ответ из него не выпадает. <code>upper_bound</code> отличается одним знаком: <code>a[mid] &lt;= x</code>.</p>
+    </div>
+    <div class="demo" data-demo="bsearch"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Бинарный поиск в реальном коде</h2>
+      <ul class="points">
+        <li>Python <code>bisect</code> (с 3.10 — параметр <code>key</code>), Go <code>sort.Search</code> и <code>slices.BinarySearch</code>, C++ <code>lower_bound</code>. Java <code>Collections.binarySearch</code> при промахе возвращает <code>-(точка вставки) - 1</code>.</li>
+        <li><code>(lo + hi) / 2</code> переполняет <code>int</code> в Java и C — этот баг 9 лет жил в JDK. Пишут <code>lo + (hi - lo) / 2</code> или <code>(lo + hi) &gt;&gt;&gt; 1</code>.</li>
+        <li>Где он работает: поиск ключа на странице B-дерева, офсеты в <code>.index</code>-файлах Kafka, блоки SSTable, <code>git bisect</code> — бинарный поиск по истории коммитов.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+import bisect
+
+a = [10, 20, 20, 20, 30]
+bisect.bisect_left(a, 20)    # 1 — первый &gt;= 20
+bisect.bisect_right(a, 20)   # 4 — первый &gt; 20
+# сколько двадцаток: 4 - 1 = 3, за O(log n)
+
+def grade(score, bounds=(60, 70, 80, 90)):
+    return 'FDCBA'[bisect.bisect_right(bounds, score)]
+
+grade(85)   # 'B'
+
+bisect.insort(events, e)     # O(log n) на поиск,
+                             # но O(n) на сдвиг списка!
+# много вставок — sortedcontainers.SortedList
+</code></pre>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Бинарный поиск по ответу</h2>
+      <p class="lead">Ищем не элемент, а минимальное значение, при котором проверка проходит. Условие одно: проверка монотонна — если вместимости <code>c</code> хватает, хватит и <code>c + 1</code>.</p>
+<pre class="code"><code class="lang-py">
+def ship_within_days(w, days):
+    def fits(cap):          # жадно грузим по порядку
+        need, load = 1, 0
+        for x in w:
+            if load + x &gt; cap:
+                need, load = need + 1, 0
+            load += x
+        return need &lt;= days
+    lo, hi = max(w), sum(w) # ответ в [lo, hi]
+    while lo &lt; hi:
+        mid = (lo + hi) // 2
+        if fits(mid): hi = mid
+        else: lo = mid + 1
+    return lo               # O(n · log(sum))
+</code></pre>
+      <p class="note">Признаки в условии: «минимально возможное максимальное», «наименьшая скорость, чтобы успеть», «за D дней».</p>
+    </div>
+    <div class="demo" data-demo="ship"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Поиск в повёрнутом массиве</h2>
+      <p class="lead">Отсортированный массив сдвинули по кругу: <code>[15, 18, … 31, 2, 5, … 13]</code>. Целиком он не упорядочен, но в каждом отрезке <code>[lo, hi]</code> хотя бы одна половина от <code>mid</code> отсортирована. Проверяем, лежит ли цель в ней, — и отбрасываем другую.</p>
+<pre class="code"><code class="lang-py">
+if a[lo] &lt;= a[mid]:          # левая половина ровная
+    if a[lo] &lt;= x &lt; a[mid]: hi = mid - 1
+    else:                   lo = mid + 1
+else:                       # ровная — правая
+    if a[mid] &lt; x &lt;= a[hi]: lo = mid + 1
+    else:                   hi = mid - 1
+</code></pre>
+      <p class="note">Выберите, что искать, и нажимайте «Шаг». Цветом выделена отсортированная половина.</p>
+    </div>
+    <div class="demo" data-demo="rotated"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Интервалы и заметающая прямая</h2>
+      <ul class="points">
+        <li><b>Сколько нужно переговорок</b>: разложить начала (+1) и концы (−1) на одну ось, отсортировать и пройти слева направо. Максимум счётчика — ответ. При равном времени конец идёт раньше начала.</li>
+        <li><b>Слить пересечения</b>: отсортировать по началу, вести текущий отрезок и расширять его, пока следующий начинается не позже его конца.</li>
+        <li>Где: free/busy в календарях, объединение диапазонов IP и времени, <code>range_agg</code> в Postgres, поиск пересечений в геометрии.</li>
+      </ul>
+      <p class="note">Обе задачи — O(n log n) из-за сортировки, сам проход линейный. Выберите режим и нажимайте «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="rooms"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как узнать задачу на собеседовании</h2>
+    <div class="patterns">
+      <div class="pat"><span>«массив отсортирован», «найти первый / последний», нужно O(log n)</span><b>бинарный поиск: lower_bound / upper_bound</b></div>
+      <div class="pat"><span>«минимальное максимальное», «наименьшая скорость», «за D дней»</span><b>бинпоиск по ответу + жадная проверка</b></div>
+      <div class="pat"><span>«k-й по величине», «топ-K частых», «k ближайших точек»</span><b>куча на k элементов или quickselect</b></div>
+      <div class="pat"><span>«встречи», «отрезки», «пересекаются ли»</span><b>сортировка по началу, проход или sweep line</b></div>
+      <div class="pat"><span>«пара / тройка с суммой», «ближайшее значение»</span><b>сортировка + два указателя</b></div>
+      <div class="pat"><span>«значения от 0 до 10⁵», «оценки», «буквы»</span><b>counting sort / массив счётчиков, O(n)</b></div>
+      <div class="pat"><span>«слить k отсортированных списков»</span><b>куча из k голов, O(n log k)</b></div>
+      <div class="pat"><span>«отсортировать 100 ГБ, памяти 1 ГБ»</span><b>внешняя сортировка: серии + k-way merge</b></div>
+    </div>
+    <p class="note">Перед решением уточните: нужна ли стабильность, можно ли менять входной массив, какой диапазон значений и есть ли повторы. Каждый ответ меняет выбор алгоритма.</p>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сортируем миллион строк: <code>sorted(words, key=str.lower)</code>. Сколько раз вызовется <code>str.lower</code>?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 40 миллионов: по два раза на каждое сравнение</button>
+      <button class="opt text" data-correct>Ровно миллион: по разу на элемент</button>
+      <button class="opt text">Около 20 миллионов: по разу на сравнение</button>
+      <button class="opt text">Зависит от того, насколько данные уже отсортированы</button>
+      <div class="explain">Ключ вычисляется один раз для каждого элемента и запоминается, а сравниваются уже готовые ключи (~n·log₂n ≈ 20 млн сравнений, но в C). Поэтому в Python 3 убрали <code>cmp</code>: функция сравнения вызывалась бы на каждом сравнении. Если без неё никак — <code>functools.cmp_to_key</code>, и это в разы медленнее. В JS компаратор вызывается на каждое сравнение, а без него <code>[10, 9, 1].sort()</code> сравнивает строки и даёт <code>[1, 10, 9]</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Что вернёт <code>sorted(['яблоко', 'Ёлка', 'арбуз', 'ёж', 'Банан'])</code>?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">['арбуз', 'Банан', 'ёж', 'Ёлка', 'яблоко']</button>
+      <button class="opt">['Банан', 'Ёлка', 'арбуз', 'ёж', 'яблоко']</button>
+      <button class="opt" data-correct>['Ёлка', 'Банан', 'арбуз', 'яблоко', 'ёж']</button>
+      <button class="opt">['Банан', 'Ёлка', 'арбуз', 'яблоко', 'ёж']</button>
+      <div class="explain">Строки сравниваются по кодам символов: <code>Ё</code> = U+0401 стоит перед всеми заглавными, <code>ё</code> = U+0451 — после <code>я</code>, а все заглавные — перед строчными. Для человеческого порядка нужна collation: <code>key=locale.strxfrm</code> с <code>ru_RU.UTF-8</code> или ICU (PyICU). В Postgres порядок <code>ORDER BY</code> и индексов задаёт collation колонки, и обновление glibc 2.28 однажды поменяло его так, что индексы пришлось перестраивать.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+<pre class="code"><code class="lang-sql">
+EXPLAIN (ANALYZE) SELECT * FROM orders
+ORDER BY created_at LIMIT 10;
+--  Sort Method: top-N heapsort  Memory: 27kB
+
+EXPLAIN (ANALYZE) SELECT * FROM orders ORDER BY total;
+--  Sort Method: external merge  Disk: 181240kB
+--  не влезло в work_mem: поднять для сессии или
+--  дать индекс, который отдаёт строки уже по порядку
+</code></pre>
+<pre class="code"><code class="lang-py">
+from timeit import timeit
+import random
+a = list(range(10**6))
+b = random.sample(a, len(a))
+timeit(lambda: sorted(a), number=10)  # ~0,2 с
+timeit(lambda: sorted(b), number=10)  # ~11 с
+# отсортированный вход — одна серия, n − 1 сравнение
+</code></pre>
+<pre class="code"><code class="lang-plain">
+$ sort -S 2G --parallel=8 big.csv &gt; out.csv
+</code></pre>
+    </div>
+    <ul class="points">
+      <li>Нужны первые k — не сортируйте всё: <code>heapq.nsmallest</code>, <code>LIMIT</code> с индексом.</li>
+      <li>Данные приходят почти по порядку (логи, время) — Timsort сделает это почти за O(n). Не перемешивайте их зря.</li>
+      <li>Держать коллекцию отсортированной при частых вставках — <code>SortedList</code>, B-дерево или куча, а не <code>insort</code> в список.</li>
+      <li>Сравнивайте через <code>key</code>, а не через компаратор. Для массивов чисел — <code>numpy.sort</code>: тот же алгоритм, но без объектов Python.</li>
+      <li>Пользователю показываете строки — сортируйте с collation, а не по кодам символов.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Сортировка — это подготовка: после неё поиск, дубликаты, группировка и слияние становятся линейными или логарифмическими.</li>
+      <li>Быстрая сортировка быстра, пока опорный элемент удачный. Стандартные библиотеки страхуются: introsort, pdqsort.</li>
+      <li>Стабильность нужна для сортировки по нескольким ключам. Python, Java для объектов и JS стабильны; Go <code>slices.Sort</code> и C++ <code>std::sort</code> — нет.</li>
+      <li>Timsort использует порядок, который уже есть в данных. Сравнениями быстрее n log n нельзя; radix и counting обходят это через ключи.</li>
+      <li>Топ-K — куча или quickselect. Данные больше памяти — серии и k-way merge.</li>
+      <li>Бинарный поиск пишут от инварианта на полуинтервале. Он работает везде, где есть монотонность, — даже по ответу.</li>
+    </ul>
+    <p class="proverb">Отсортируй — и задача станет проходом.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-search.js"></script>
+</body>
+</html>

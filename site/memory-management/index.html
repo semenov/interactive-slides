@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Управление памятью и сборка мусора — интерактивная презентация</title>
+  <meta name="description" content="Кто и когда освобождает память: malloc/free, владение в Rust, подсчёт ссылок, трассирующие сборщики, поколения, барьеры записи, GOGC, утечки и слабые ссылки.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero" aria-hidden="true">
+      <svg viewBox="0 0 380 300">
+        <defs><marker id="hero-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#13293d"/></marker>
+        <marker id="hero-arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#a9b4bf"/></marker></defs>
+        <rect x="6" y="20" width="70" height="260" rx="12" fill="#13293d"/>
+        <text x="41" y="46" fill="#fff" font-family="JetBrains Mono, monospace" font-size="12" font-weight="700" text-anchor="middle">корни</text>
+        <rect x="18" y="70" width="46" height="26" rx="5" fill="#a61e4d"/>
+        <rect x="18" y="137" width="46" height="26" rx="5" fill="#a61e4d"/>
+        <rect x="18" y="223" width="46" height="26" rx="5" fill="#a61e4d"/>
+        <g stroke="#13293d" stroke-width="2" fill="none" marker-end="url(#hero-arr)">
+          <path d="M66 83 L126 67"/>
+          <path d="M66 150 L126 150"/>
+          <path d="M66 236 L126 236"/>
+          <path d="M168 62 L218 62"/>
+          <path d="M168 150 L218 150"/>
+          <path d="M262 62 L310 62"/>
+          <path d="M168 236 L218 236"/>
+          <path d="M240 215 L240 173"/>
+          <path d="M240 129 L240 85"/>
+        </g>
+        <g stroke="#a9b4bf" stroke-width="2" fill="none" stroke-dasharray="5 4" marker-end="url(#hero-arr2)">
+          <path d="M318 222 L322 182"/>
+          <path d="M338 150 Q362 134 344 112"/>
+          <path d="M324 118 Q302 134 316 152"/>
+        </g>
+        <g fill="#13293d">
+          <circle cx="147" cy="62" r="20"/><circle cx="147" cy="150" r="20"/><circle cx="147" cy="236" r="20"/>
+          <circle cx="240" cy="62" r="20"/><circle cx="240" cy="150" r="20"/><circle cx="240" cy="236" r="20"/>
+          <circle cx="332" cy="62" r="20"/>
+        </g>
+        <g fill="#f2f5f7" stroke="#a9b4bf" stroke-width="2" stroke-dasharray="5 4">
+          <circle cx="334" cy="100" r="15"/><circle cx="328" cy="166" r="16"/><circle cx="316" cy="240" r="16"/>
+        </g>
+        <g stroke="#ce3262" stroke-width="2.5">
+          <path d="M327 93 L341 107 M341 93 L327 107"/>
+          <path d="M320 158 L336 174 M336 158 L320 174"/>
+          <path d="M308 232 L324 248 M324 232 L308 248"/>
+        </g>
+      </svg>
+    </div>
+    <div class="stack">
+      <h1>Управление памятью и&nbsp;сборка мусора</h1>
+      <p class="lead">Кто и когда освобождает память: <code>free</code>, владение в Rust, подсчёт ссылок, трассирующие сборщики. Как устроены GC в Go, JVM, V8 и CPython, откуда берутся паузы и утечки и как их искать.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Кто освобождает память</h2>
+    <p class="lead">Стек освобождается сам при возврате из функции (подробнее — в <a href="/stack-and-heap/">презентации про стек и кучу</a>). С кучей сложнее: объект живёт неизвестно сколько, и кто-то должен решить, что он больше не нужен. Ответов четыре.</p>
+    <div class="ways" role="table">
+      <div class="way head" role="row"><span role="columnheader">Кто решает</span><span role="columnheader">Когда освобождается</span><span role="columnheader">Чем платим</span></div>
+      <div class="way" role="row"><span role="rowheader"><b>Программист</b><small>C: <code>malloc</code> / <code>free</code></small></span><span role="cell" data-h="Когда">Там, где написан <code>free</code></span><span role="cell" data-h="Цена">Ничем в рантайме — и всеми ошибками: утечки, use-after-free, double free</span></div>
+      <div class="way" role="row"><span role="rowheader"><b>Компилятор</b><small>Rust, C++ RAII</small></span><span role="cell" data-h="Когда">В конце области видимости владельца</span><span role="cell" data-h="Цена">Строгие правила владения, borrow checker</span></div>
+      <div class="way" role="row"><span role="rowheader"><b>Счётчик ссылок</b><small>CPython, Swift, <code>shared_ptr</code></small></span><span role="cell" data-h="Когда">Сразу, как пропала последняя ссылка</span><span role="cell" data-h="Цена">Запись в счётчик на каждое присваивание, циклы текут</span></div>
+      <div class="way" role="row"><span role="rowheader"><b>Трассирующий GC</b><small>Go, Java, JS, C#</small></span><span role="cell" data-h="Когда">Когда-нибудь потом, при сборке</span><span role="cell" data-h="Цена">CPU на сборку, лишняя память, паузы</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Ручное управление: три классические ошибки</h2>
+      <p class="lead"><code>free</code> не знает, остались ли на блок другие указатели, а <code>malloc</code> охотно отдаёт только что освобождённый блок следующему. Отсюда утечки, use-after-free и double free.</p>
+      <p class="note">По данным Microsoft и Chrome, около 70% серьёзных уязвимостей в их C/C++ коде — ошибки работы с памятью. Ловят их AddressSanitizer (<code class="nw">-fsanitize=address</code>) и Valgrind.</p>
+      <p class="note">Выберите сценарий и нажимайте «Шаг». Аллокатор, как tcache в glibc, первым отдаёт последний освобождённый блок того же размера.</p>
+    </div>
+    <div class="demo" data-demo="manual"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Владение: освобождает компилятор</h2>
+      <ul class="points">
+        <li>У значения в куче один владелец. Владелец выходит из области видимости — компилятор вставляет вызов <code>drop</code>. Это <code>free</code>, который нельзя забыть или вызвать дважды.</li>
+        <li>Присваивание перемещает владение. Старая переменная больше недействительна — use-after-free просто не скомпилируется.</li>
+        <li>Ссылка <code>&amp;b</code> заимствует без владения; borrow checker следит, чтобы она не пережила владельца.</li>
+        <li>C++ делает то же через RAII: <code>unique_ptr</code> — один владелец, <code>shared_ptr</code> — счётчик ссылок. Но без проверки при компиляции.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="ownership"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Подсчёт ссылок</h2>
+      <p class="lead">В заголовке каждого объекта — счётчик ссылок. Присваивание увеличивает его у нового объекта и уменьшает у старого. Дошёл до нуля — объект освобождается сразу, и уменьшаются счётчики всего, на что он ссылался.</p>
+      <ul class="points">
+        <li>Плюс: память и ресурсы отпускаются предсказуемо, в момент потери последней ссылки.</li>
+        <li>Минус: запись в память на каждое присваивание. В многопоточном коде — атомарная: так стоит <code>shared_ptr</code> и Swift ARC, а CPython из-за этого держал GIL.</li>
+        <li>Цикл объектов держит сам себя — счётчики никогда не обнулятся.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="refcount"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сборщик циклов в CPython</h2>
+      <p class="lead">Поверх счётчиков CPython периодически проверяет контейнеры — списки, словари, экземпляры классов. Корней он не знает, поэтому идёт от обратного: вычитает ссылки изнутри проверяемой группы. Если у объекта что-то осталось, на него ссылаются снаружи.</p>
+      <p class="note">Запускается после нескольких сотен новых контейнеров (<code>gc.get_threshold()</code>), объекты разбиты на поколения. Строки и числа не контейнеры — их он не трогает. Нажимайте «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="cyclegc"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Трассирующая сборка: mark &amp; sweep</h2>
+      <p class="lead">Корни — то, что программа может прочитать прямо сейчас: стеки всех потоков, регистры, глобальные переменные. Живо всё, до чего можно дойти от корней по указателям. Остальное — мусор, циклы тоже.</p>
+      <ul class="points">
+        <li><b>Mark</b>: обход графа от корней. Серые — найдены, но ещё не просмотрены; чёрные — просмотрены.</li>
+        <li><b>Sweep</b>: проход по куче, белые освобождаются.</li>
+        <li>Разметка стоит пропорционально живым объектам, мусор она не трогает.</li>
+      </ul>
+      <p class="note">Нажимайте «Шаг». Попробуйте обнулить <code>user</code> до начала сборки.</p>
+    </div>
+    <div class="demo" data-demo="marksweep"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Конкурентная разметка и барьер записи</h2>
+      <p class="lead">Чтобы не останавливать программу, сборщик размечает параллельно с ней. А программа (мутатор) тем временем переставляет указатели. Опасно, если она сохранит ссылку на белый объект в уже чёрный и удалит её из серого: к чёрным сборщик не возвращается, и живой объект освободят.</p>
+      <p class="note">Барьер записи — несколько инструкций, которые компилятор добавляет к каждой записи указателя в кучу. Пока идёт разметка, он красит затронутый объект в серый. Go использует гибрид обоих барьеров. Выберите режим и нажимайте «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="tricolor"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Фрагментация, уплотнение и bump-аллокация</h2>
+      <p class="lead">Сборщик без перемещения оставляет дыры: свободного много, а большой объект не помещается. Перемещающий сдвигает живых вплотную, и свободное место становится одним куском. Выделение памяти тогда — просто сдвиг указателя: <code>top += size</code>.</p>
+      <ul class="points">
+        <li>Копирующий сборщик переносит живых в пустую половину кучи: работа пропорциональна живым, зато памяти нужно вдвое больше.</li>
+        <li>Двигать объекты можно, только если рантайм знает все указатели и может их поправить. JVM, V8 и .NET двигают, Go и CPython — нет.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="compact"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Поколения</h2>
+      <p class="lead">Большинство объектов умирает молодыми: строки, DTO запроса, итераторы. Поэтому новые объекты кладут в небольшую область eden и часто собирают только её — копированием. Цена minor GC пропорциональна выжившим, а их единицы процентов.</p>
+      <ul class="points">
+        <li>Кто пережил несколько сборок, переезжает в старое поколение. Его собирают редко — это major GC.</li>
+        <li>Ссылки «старый → молодой» отслеживает барьер записи с таблицей карт (card table), иначе на каждой minor GC пришлось бы сканировать всю старую кучу.</li>
+      </ul>
+      <p class="note">Увеличьте темп выделения: minor GC пойдут чаще, «средние» объекты будут доживать до старого поколения и умирать уже там.</p>
+    </div>
+    <div class="demo" data-demo="generations"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Молодое поколение JVM — 1 ГБ. К моменту minor GC живы 2% объектов в нём. Сколько работы у сборщика?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Пропорционально 1 ГБ: надо просмотреть всё</button>
+      <button class="opt text" data-correct>Пропорционально ~20 МБ живых объектов</button>
+      <button class="opt text">Пропорционально всей куче, включая старое поколение</button>
+      <button class="opt text">Почти ноль: мёртвые объекты удаляются по одному при выходе из функции</button>
+      <div class="explain">Копирующий сборщик идёт от корней (и от отмеченных карт старого поколения) и копирует только достижимое. Мёртвые объекты он даже не видит: после копирования eden целиком считается свободным. Поэтому в JVM и V8 короткоживущие объекты почти бесплатны. В Go поколений нет, и там частые выделения сильнее бьют по CPU.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Паузы против пропускной способности</h2>
+      <p class="lead">Stop-the-world сборщик останавливает все потоки и размечает кучу всеми ядрами — эффективно, но пауза растёт вместе с живой кучей. Конкурентный размечает параллельно с программой: паузы — доли миллисекунды, зато во время цикла программа делит CPU со сборщиком и работает медленнее.</p>
+      <p class="note">Модель: сервис на 4 ядрах, загрузка 50%, запрос — 5 мс CPU, один цикл GC за 10 секунд. Разметка — условно 1 ГБ/с на ядро. Выберите сборщик и размер живой кучи.</p>
+    </div>
+    <div class="demo" data-demo="pauses"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Память против CPU: GOGC и GOMEMLIMIT</h2>
+      <p class="lead">Go запускает сборку, когда куча выросла на GOGC% от живого объёма после прошлой сборки. При GOGC=100 пик вдвое больше живых данных. Меньше GOGC — меньше памяти и чаще сборки. Стоимость одной сборки пропорциональна живой куче, а не мусору.</p>
+      <p class="note">GOMEMLIMIT — мягкий лимит: рядом с ним GC запускается чаще, но не тратит больше ~50% CPU, иначе сервис встал бы. В контейнере его ставят на 80–90% лимита памяти. В JVM похожие ручки — <code>-Xmx</code> и <code>-XX:MaxRAMPercentage</code>.</p>
+    </div>
+    <div class="demo" data-demo="gogc"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Настоящие сборщики</h2>
+    <div class="gcs" role="table">
+      <div class="gcr head" role="row"><span>Рантайм</span><span>Как устроен</span><span>Паузы</span><span>Ручки</span></div>
+      <div class="gcr" role="row"><b>Go</b><span data-h="Устройство">Конкурентный трёхцветный mark-sweep, без перемещения и без поколений. Мутатор, который много выделяет, сам помогает размечать (assist).</span><span data-h="Паузы">Десятки–сотни мкс</span><span data-h="Ручки"><code>GOGC</code>, <code>GOMEMLIMIT</code></span></div>
+      <div class="gcr" role="row"><b>JVM G1</b><span data-h="Устройство">По умолчанию с Java 9. Куча из регионов по 1–32 МБ, поколения. Молодые регионы эвакуируются в паузе, старые размечаются конкурентно и собираются начиная с самых «мусорных».</span><span data-h="Паузы">Цель 200 мс по умолчанию, обычно 10–100 мс</span><span data-h="Ручки"><code>-Xmx</code>, <code>-XX:MaxGCPauseMillis</code></span></div>
+      <div class="gcr" role="row"><b>JVM ZGC</b><span data-h="Устройство">Размечает и перемещает объекты конкурентно: барьер на чтении указателя и «цветные» указатели. С Java 21 — с поколениями.</span><span data-h="Паузы">&lt; 1 мс при любой куче</span><span data-h="Ручки"><code>-XX:+UseZGC</code>, <code>-Xmx</code></span></div>
+      <div class="gcr" role="row"><b>V8 (Node, Chrome)</b><span data-h="Устройство">Orinoco. Молодое поколение — параллельный scavenger, копирование между полупространствами. Старое — конкурентная разметка и mark-compact с параллельным уплотнением.</span><span data-h="Паузы">Scavenge — ~1 мс, старое — единицы–десятки мс</span><span data-h="Ручки"><code>--max-old-space-size</code>, <code>--max-semi-space-size</code></span></div>
+      <div class="gcr" role="row"><b>CPython</b><span data-h="Устройство">Подсчёт ссылок плюс сборщик циклов по поколениям. Объекты не двигаются: <code>id(x)</code> — их адрес.</span><span data-h="Паузы">Сборка циклов в старшем поколении — до сотен мс на больших кучах</span><span data-h="Ручки"><code>gc.set_threshold</code>, <code>gc.freeze</code></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Утечки в языках со сборщиком</h2>
+      <p class="lead">Сборщик освобождает недостижимое. Утечка в Go, Java, JS или Python — объект, который достижим, но больше не нужен: на него всё ещё смотрит глобальная map, кэш, подписка или замыкание.</p>
+      <p class="note">Включите источник утечки и следите за «полом» пилы — объёмом после сборки. Потом сделайте два снимка кучи с паузой и сравните: что выросло, то и течёт. Так работают heap snapshot в DevTools, <code>pprof -diff_base</code> и <code>tracemalloc</code>.</p>
+    </div>
+    <div class="demo" data-demo="leak"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Слабые ссылки</h2>
+      <p class="lead">Слабая ссылка не удерживает объект. Если других ссылок нет, сборщик его освободит, а слабая ссылка опустеет. Так к объекту привязывают метаданные, не продлевая ему жизнь.</p>
+      <ul class="points">
+        <li>JS: <code>WeakMap</code>, <code>WeakRef</code>. Python: <code>weakref.WeakValueDictionary</code>. Java: <code>WeakHashMap</code>. Go 1.24: <code>weak.Pointer</code>.</li>
+        <li>Момент освобождения не определён, поэтому кэш на слабых ссылках непредсказуем. Обычному кэшу нужен лимит (LRU) и TTL.</li>
+      </ul>
+      <p class="note">Создайте пару объектов, «забудьте» их в приложении и запустите сборку — сначала с <code>Map</code>, потом с <code>WeakMap</code>.</p>
+    </div>
+    <div class="demo" data-demo="weakref"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В Python-сервисе вызвали <code>gc.disable()</code>. Что будет с памятью?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Перестанет освобождаться совсем — процесс быстро упадёт по OOM</button>
+      <button class="opt text" data-correct>Почти всё освобождается как раньше; утекают только циклы</button>
+      <button class="opt text">Ничего: в Python нельзя выключить сборку мусора</button>
+      <button class="opt text">Объекты будут освобождаться только при выходе из функции</button>
+      <div class="explain"><code>gc.disable()</code> выключает только сборщик циклов, подсчёт ссылок продолжает работать. Instagram так и делал, чтобы уменьшить копирование страниц после <code>fork</code>: сборщик пишет в заголовки объектов, и общие с родителем страницы копируются. Позже появился <code>gc.freeze()</code> — он убирает уже созданные объекты из-под сборщика без отключения. Подробнее о копировании при записи — в <a href="/virtual-memory/">презентации про виртуальную память</a>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Go-сервис читает строки лога по 64 КБ и складывает в глобальную map префикс каждой: <code>seen[line[:16]]++</code>. Сколько памяти удерживает одна запись?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">16 байт ключа плюс накладные расходы map</button>
+      <button class="opt text" data-correct>Все 64 КБ строки</button>
+      <button class="opt text">Ничего: map копирует ключ, а строку соберёт GC</button>
+      <button class="opt text">32 байта: заголовок строки и счётчик</button>
+      <div class="explain">Подстрока в Go — это указатель внутрь той же памяти плюс длина. Ключ map держит указатель, и сборщик не освободит 64 КБ, пока жив ключ. Исправление: <code>strings.Clone(line[:16])</code>. То же со срезами: <code>buf[:16]</code> держит весь массив. В V8 длинные подстроки тоже ссылаются на исходную строку; в Python и Java (с 7u6) срез копирует.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как это увидеть у себя</h2>
+    <div class="tools">
+<pre class="code"><code class="lang-plain">
+# Go: строка на каждую сборку
+$ GODEBUG=gctrace=1 ./server
+gc 14 @2.315s 3%: 0.025+12+0.031 ms clock, …,
+   48->51->26 MB, 52 MB goal, 8 P
+#  пауза+разметка+пауза; куча до->после->живая
+
+# что держит память сейчас / кто больше выделяет
+$ go tool pprof -sample_index=inuse_space \
+    http://localhost:6060/debug/pprof/heap
+$ go tool pprof -sample_index=alloc_space …
+</code></pre>
+<pre class="code"><code class="lang-plain">
+# JVM
+$ java -Xlog:gc:file=gc.log -jar app.jar
+$ jcmd &lt;pid&gt; GC.heap_info
+$ jcmd &lt;pid&gt; GC.heap_dump /tmp/heap.hprof  # → Eclipse MAT
+
+# Node
+$ node --trace-gc --heapsnapshot-signal=SIGUSR2 app.js
+$ kill -USR2 &lt;pid&gt;   # снимок → DevTools → Memory → Comparison
+
+# Python
+tracemalloc.start(); s1 = tracemalloc.take_snapshot()
+…; s2 = tracemalloc.take_snapshot()
+s2.compare_to(s1, "lineno")[:10]
+</code></pre>
+    </div>
+    <p class="note">Сначала смотрите, растёт ли куча после сборок (утечка) или только частота сборок (много выделений). RSS процесса больше кучи: рантайм держит запас и отдаёт память ОС не сразу — подробнее в <a href="/virtual-memory/">презентации про виртуальную память</a>.</p>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Что делать на практике</h2>
+    <div class="fit">
+      <div class="fit-col">
+        <h3>Помогает</h3>
+        <ul>
+          <li>Выделять меньше в горячем пути: заранее задавать ёмкость (<code>make([]T, 0, n)</code>), переиспользовать буферы, <code>sync.Pool</code></li>
+          <li>Ставить лимит памяти рантайму под лимит контейнера: <code>GOMEMLIMIT</code>, <code>-XX:MaxRAMPercentage=75</code>, <code>--max-old-space-size</code></li>
+          <li>Ограничивать каждый кэш и очередь по размеру, снимать подписки и таймеры</li>
+          <li>Для низких задержек на JVM — ZGC, на Go — поднять GOGC, если память есть</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Вредит</h3>
+        <ul>
+          <li>Вызывать <code>System.gc()</code> / <code>runtime.GC()</code> «на всякий случай» — это полная сборка с паузой</li>
+          <li>Огромная куча «чтобы не падало» при STW-сборщике — паузы растут вместе с ней</li>
+          <li>Финализаторы для освобождения ресурсов: момент их запуска не определён. Закрывайте явно — <code>defer</code>, <code>with</code>, try-with-resources</li>
+          <li>Оптимизировать GC, не посмотрев профиль выделений</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Вопрос один — кто решает, что объект больше не нужен: программист, компилятор, счётчик ссылок или трассирующий сборщик.</li>
+      <li>Подсчёт ссылок освобождает сразу, но платит на каждом присваивании и не видит циклов.</li>
+      <li>Трассирующий GC ищет достижимое от корней. Его работа пропорциональна живым объектам, а частота — темпу выделений.</li>
+      <li>Конкурентной разметке нужен барьер записи, перемещению — точное знание всех указателей. Поколения делают короткоживущие объекты почти бесплатными.</li>
+      <li>Каждый сборщик выбирает между паузами, CPU и памятью. GOGC, <code>-Xmx</code> и тип сборщика двигают этот баланс.</li>
+      <li>Утечка с GC — достижимое, но ненужное. Ищется сравнением двух снимков кучи.</li>
+    </ul>
+    <p class="proverb">Мусор — это не то, что не нужно, а то, до чего не дотянуться.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-gc.js"></script>
+</body>
+</html>

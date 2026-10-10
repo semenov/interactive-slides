@@ -1,6 +1,6 @@
 // Slide engine shared by all presentations.
 // Markup: <div class="deck"><div class="slides"><section class="slide">…</section>…</div></div>
-// Code: <pre class="code"><code class="lang-sql"> (default Go; lang-plain disables highlighting).
+// Code: <pre class="code"><code class="lang-sql"> (default Go; also lang-c, lang-js, lang-py; lang-plain disables highlighting).
 // Interactive parts: any element with data-demo="name"; register with Deck.demo(name, el => ({start, stop})).
 // start/stop are called when the slide becomes active/inactive; the factory runs on first visit.
 (() => {
@@ -29,9 +29,19 @@
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const GO_KW = 'func|go|chan|select|case|default|for|range|return|var|const|make|close|if|else|struct|type|package|import|defer|len|cap|panic|nil|true|false|uint|uint16|uint32|int|string|bool';
   const SQL_KW = 'select|from|where|and|or|not|insert|into|values|update|set|delete|begin|commit|rollback|create|table|index|on|using|check|primary|key|references|group|by|order|limit|for|skip|locked|returning|as|join|count|sum|null|now|interval|explain|analyze|engine|mergetree|like|desc|asc|is|in|alter|add|column|drop|vacuum|full|with|include|exists|distinct|case|when|then|else|end|true|false|between';
+  const C_KW = 'int|char|long|short|unsigned|signed|void|struct|union|enum|typedef|static|const|volatile|extern|sizeof|return|if|else|for|while|do|switch|case|default|break|continue|goto|NULL|uint8_t|uint16_t|uint32_t|uint64_t|int32_t|int64_t|size_t|float|double|include|define';
+  const JS_KW = 'function|const|let|var|return|if|else|for|while|of|in|new|class|async|await|yield|import|from|export|try|catch|finally|throw|null|undefined|true|false|this|typeof';
+  const PY_KW = 'def|class|return|if|elif|else|for|while|in|import|from|as|with|async|await|yield|try|except|finally|raise|None|True|False|lambda|not|and|or|is|pass|global';
+  // Groups: comment, string, operator (Go <-), keyword, number.
+  const rule = (comment, string, kw, flags = 'gm') =>
+    new RegExp('(' + comment + ')|(' + string + String.raw`)|(&lt;-)|\b(` + kw + String.raw`)\b|\b(0x[\da-fA-F]+|\d+)\b`, flags);
+  const DQ = String.raw`"(?:[^"\\\n]|\\.)*"`, SQ = String.raw`'(?:[^'\\\n]|\\.)*'`;
   const RULES = {
-    go: new RegExp(String.raw`(\/\/.*$)|("(?:[^"\\\n]|\\.)*")|(&lt;-)|\b(` + GO_KW + String.raw`)\b|\b(\d+)\b`, 'gm'),
-    sql: new RegExp(String.raw`(--.*$)|('(?:[^'\n])*')|(&lt;-)|\b(` + SQL_KW + String.raw`)\b|\b(\d+)\b`, 'gmi'),
+    go: rule(String.raw`\/\/.*$`, DQ, GO_KW),
+    sql: rule('--.*$', "'(?:[^'\\n])*'", SQL_KW, 'gmi'),
+    c: rule(String.raw`\/\/.*$|\/\*[\s\S]*?\*\/`, DQ + '|' + SQ, C_KW),
+    js: rule(String.raw`\/\/.*$`, DQ + '|' + SQ + '|`[^`]*`', JS_KW),
+    py: rule('#.*$', DQ + '|' + SQ, PY_KW),
   };
 
   // Minimal highlighter: comments, strings, the Go channel arrow, keywords, numbers.

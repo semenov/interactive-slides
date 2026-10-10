@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Данные в памяти: биты и байты — интерактивная презентация</title>
+  <meta name="description" content="Как числа, строки и структуры лежат в памяти: двоичная система, дополнительный код и переполнения, IEEE 754, порядок байтов, выравнивание, упакованные объекты в Python и Java, Unicode и UTF-8.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-mem" aria-hidden="true">
+      <div class="hm-row"><span class="hm-a">1000</span><i class="v">e8</i><i class="v">03</i><i class="v">00</i><i class="v">00</i><i class="p">41</i><i>00</i><i>00</i><i>00</i></div>
+      <div class="hm-row"><span class="hm-a">1008</span><i class="f">18</i><i class="f">2d</i><i class="f">44</i><i class="f">54</i><i class="f">fb</i><i class="f">21</i><i class="f">09</i><i class="f">40</i></div>
+      <div class="hm-row"><span class="hm-a">1010</span><i class="s">68</i><i class="s">65</i><i class="s">6c</i><i class="s">6c</i><i class="s">6f</i><i class="s">00</i><i>00</i><i>00</i></div>
+      <div class="hm-bits"><span>0x41 =</span><b>0</b><b class="on">1</b><b>0</b><b>0</b><b>0</b><b>0</b><b>0</b><b class="on">1</b><span>= «A»</span></div>
+    </div>
+    <div class="stack">
+      <h1>Данные в памяти: биты и байты</h1>
+      <p class="lead">Как числа, дроби, строки и структуры лежат в памяти — и почему из-за этого 0,1 + 0,2 ≠ 0,3, счётчики уходят в минус, а <code>"😀".length</code> равно двум.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте на биты и кнопки, двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Биты, байты и hex</h2>
+      <p class="lead">Память хранит только биты. Восемь битов — байт, 256 значений. Двоичная запись длинная, поэтому её пишут в шестнадцатеричной: одна hex-цифра — ровно 4 бита, байт — ровно две цифры.</p>
+      <ul class="points">
+        <li><code>0xFF</code> = 255 = <code>1111 1111</code>, <code>0x100</code> = 256 — уже не влезает в байт.</li>
+        <li>Hex видно везде: адреса, цвета <code>#6741d9</code>, хеши, UUID, дампы <code>xxd</code>.</li>
+      </ul>
+      <p class="note">Нажимайте на биты 32-битного числа или введите своё. Каждая четвёрка битов — одна hex-цифра.</p>
+    </div>
+    <div class="demo" data-demo="hex32"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Память — это массив байтов</h2>
+      <p class="lead">У каждого байта есть номер — адрес. Переменная — это адрес и размер, указатель — 8-байтное число, равное адресу. Тип знает только компилятор: процессор видит байты и читает их так, как велит инструкция.</p>
+      <p class="note">Выберите переменную или нажмите на любой байт и прочитайте байты как другой тип. Одни и те же байты дают совсем разные значения.</p>
+    </div>
+    <div class="demo" data-demo="memory"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Целые числа и дополнительный код</h2>
+      <p class="lead">Беззнаковое число — просто сумма степеней двойки. Знаковое хранится в дополнительном коде: старший бит весит не +128, а −128. Поэтому <code>−1</code> — это все единицы, а <code>−x = ~x + 1</code>.</p>
+      <p class="note">Сложение одно и то же для обоих толкований — процессору всё равно, со знаком число или без. Значения ходят по кругу: за 255 идёт 0, за 127 — −128. Нажимайте на биты и кнопки.</p>
+    </div>
+    <div class="demo" data-demo="register"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Переполнение в жизни</h2>
+      <ul class="points">
+        <li>Java <code>int</code> — 32 бита, Go <code>int</code> — 64 на 64-битных системах, C <code>int</code> — обычно 32, <code>long</code> — 32 на Windows и 64 на Linux. Python <code>int</code> не переполняется вовсе.</li>
+        <li>Java, Go, C# и Rust в release молча заворачивают. В C переполнение <code>signed</code> — неопределённое поведение: компилятор вправе выкинуть вашу проверку.</li>
+        <li>Классика: <code>mid = (lo + hi) / 2</code> в двоичном поиске. На массиве больше 2³⁰ элементов сумма переполняется — ошибка жила в JDK девять лет.</li>
+      </ul>
+      <p class="note">Выберите тип счётчика и скорость, с которой он растёт.</p>
+    </div>
+    <div class="demo" data-demo="counter"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Что вернёт Java?</p>
+<pre class="code"><code class="lang-js">
+Math.abs(Integer.MIN_VALUE)  // int, −2 147 483 648
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">2147483648</button>
+      <button class="opt">2147483647</button>
+      <button class="opt" data-correct>-2147483648</button>
+      <button class="opt">ArithmeticException</button>
+      <div class="explain">В 32 битах есть −2³¹, но нет +2³¹. Модуль считается как <code>−x = ~x + 1</code>: <code>0x80000000</code> → <code>0x7FFFFFFF</code> → <code>0x80000000</code>. Получается то же отрицательное число. Так ломается <code>Math.abs(hash) % n</code> при выборе шарда — индекс выходит отрицательным. Безопасно: <code>Math.floorMod(hash, n)</code> или <code>Math.absExact</code>, который бросит исключение.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Дробные числа: IEEE 754</h2>
+      <p class="lead">Число с плавающей точкой — это двоичная научная запись: знак, порядок и мантисса. <code>double</code> (Python <code>float</code>, JS <code>number</code>, Go <code>float64</code>) — 1 + 11 + 52 бита, около 16 значащих десятичных цифр.</p>
+      <p class="note">0,1 в двоичной системе — бесконечная дробь, как ⅓ в десятичной, поэтому хранится ближайшее представимое число. Чем больше число, тем больше шаг между соседними значениями. Введите число или выберите пример.</p>
+    </div>
+    <div class="demo" data-demo="float"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Почему деньги не хранят во float</h2>
+      <p class="lead">Каждая операция с плавающей точкой округляет результат. Ошибки маленькие, но копятся, а сравнение на равенство ломается сразу: <code>0.1 + 0.2 == 0.3</code> — <code>false</code>.</p>
+      <ul class="points">
+        <li>Деньги — целыми в минимальных единицах (копейки, центы) или десятичным типом: Python <code>Decimal</code>, Java <code>BigDecimal</code>, SQL <code>numeric</code>.</li>
+        <li>Дроби сравнивают с допуском: <code>math.isclose(a, b)</code>.</li>
+      </ul>
+      <p class="note">Двигайте ползунок: сумма прибавляется N раз в разных представлениях.</p>
+    </div>
+    <div class="demo" data-demo="money"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>В JavaScript все числа — double</h2>
+      <p class="lead">Целые в <code>number</code> точны только до 2⁵³ = 9 007 199 254 740 992. Дальше шаг между соседними значениями становится 2, 4, 8… и нечётные числа просто пропадают.</p>
+      <ul class="points">
+        <li>Бэкенд на Go или Java отдаёт <code>int64</code>-идентификатор в JSON, <code>JSON.parse</code> в браузере молча округляет его — и запрос уходит за чужой записью. Поэтому Twitter отдаёт <code>id_str</code>.</li>
+        <li>Решение: большие ID — строками, арифметика — <code>BigInt</code>.</li>
+        <li>Побитовые операции в JS работают с 32-битными целыми: <code>(2**32 | 0) === 0</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-js">
+Number.MAX_SAFE_INTEGER  // 9007199254740991
+2 ** 53 + 1              // 9007199254740992
+
+JSON.parse('{"id": 1234567890123456789}').id
+// 1234567890123456800
+
+BigInt("1234567890123456789") + 1n
+// 1234567890123456790n
+
+0.1 + 0.2                // 0.30000000000000004
+(1.005).toFixed(2)       // "1.00"
+// 1.005 хранится как 1.00499999999999989…
+</code></pre>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Счётчик событий во <code>float32</code> (так бывает в метриках, шейдерах и ML-коде). Что он покажет после 20 миллионов событий?</p>
+<pre class="code"><code class="lang-c">
+float n = 0;
+for (int i = 0; i &lt; 20000000; i++) n += 1;
+printf("%.0f\n", n);
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">20000000</button>
+      <button class="opt">19999999</button>
+      <button class="opt" data-correct>16777216</button>
+      <button class="opt">inf</button>
+      <div class="explain">У <code>float32</code> 24 бита мантиссы. После 2²⁴ = 16 777 216 шаг между соседними числами равен 2, и 16 777 216 + 1 округляется обратно до 16 777 216. Счётчик замирает навсегда без всяких ошибок. В <code>float64</code> то же случится на 2⁵³ — реже, но тоже бывает.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Порядок байтов</h2>
+      <p class="lead">Многобайтное число можно положить в память старшим байтом вперёд (big-endian) или младшим (little-endian). x86 и ARM — little-endian. Сетевые протоколы и многие форматы файлов — big-endian, «сетевой порядок».</p>
+<pre class="code"><code class="lang-py">
+struct.pack('&lt;I', n)   # little-endian
+struct.pack('>I', n)   # big-endian (сеть)
+</code></pre>
+      <p class="note">В Go — <code>binary.LittleEndian</code>/<code>BigEndian</code>, в Java <code>ByteBuffer</code> по умолчанию big-endian, а JS <code>DataView</code> без третьего аргумента тоже читает big-endian. Переключите порядок и прочитайте байты «не тем» способом.</p>
+    </div>
+    <div class="demo" data-demo="endian"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Выравнивание и паддинг</h2>
+      <p class="lead">Процессор читает 8-байтное число быстрее и атомарно, если его адрес кратен 8. Поэтому компилятор вставляет между полями пустые байты, а размер структуры округляет до самого строгого выравнивания.</p>
+      <p class="note">Go и C раскладывают поля в порядке объявления — порядок можно оптимизировать (линтер <code>fieldalignment</code>). JVM и Rust переставляют поля сами. Двигайте поля стрелками.</p>
+    </div>
+    <div class="demo" data-demo="struct"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Массив значений и массив указателей</h2>
+      <p class="lead">Go <code>[]int64</code>, Java <code>long[]</code>, NumPy — значения лежат подряд. Python <code>list</code> и Java <code>Integer[]</code> — массив указателей на отдельные объекты в куче, у каждого свой заголовок.</p>
+      <p class="note">Процессор читает память строками кэша по 64 байта. Подряд — одна строка даёт 8 чисел, а предвыборка грузит следующие заранее. Через указатели — лишние строки и зависимые загрузки, особенно когда объекты разбросаны. Пройдите по массиву в каждом режиме. Подробнее про кэши — в <a href="/cpu/">презентации о процессоре</a>.</p>
+    </div>
+    <div class="demo" data-demo="boxed"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как Python хранит int</h2>
+      <p class="lead">В CPython всё — объект <code>PyObject</code>: счётчик ссылок, указатель на тип и данные. Целое — это массив «цифр» по 30 бит, поэтому оно не переполняется, но даже <code>0</code> занимает 28 байт.</p>
+      <ul class="points">
+        <li>Числа от −5 до 256 созданы заранее и общие: <code>257 is 257</code> может оказаться <code>False</code>.</li>
+        <li>Каждый <code>a + b</code> — проверка типов и, скорее всего, новый объект. Отсюда сотни наносекунд на операцию против одной в Go.</li>
+      </ul>
+      <p class="note">Введите число и посмотрите, из чего состоит объект.</p>
+    </div>
+    <div class="demo" data-demo="pyint"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сколько памяти займёт в CPython список из миллиона разных целых?</p>
+<pre class="code"><code class="lang-py">
+xs = list(range(1_000_000))
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">≈ 8 МБ — по 8 байт на число</button>
+      <button class="opt text">≈ 16 МБ</button>
+      <button class="opt text" data-correct>≈ 40 МБ</button>
+      <button class="opt text">≈ 100 МБ</button>
+      <div class="explain">Сам список — 8 МБ указателей. Каждое число — отдельный объект: <code>sys.getsizeof</code> скажет 28 байт, а аллокатор выдаёт блоки кратно 16 — 32 байта. Итого 8 + 32 = 40 МБ (<code>tracemalloc</code> покажет именно столько). <code>array('q')</code> или <code>numpy.arange</code> уложатся в 8 МБ и считаются в десятки раз быстрее.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Строки: Unicode и UTF-8</h2>
+      <p class="lead">Unicode нумерует символы: «Я» — U+042F, «😀» — U+1F600, всего до 1,1 млн кодовых точек. UTF-8 кодирует номер от 1 до 4 байтами: ASCII — один байт, кириллица — два, эмодзи — четыре.</p>
+      <ul class="points">
+        <li>Первый байт говорит длину (<code>0…</code>, <code>110…</code>, <code>1110…</code>, <code>11110…</code>), остальные начинаются с <code>10</code>. По любому байту видно, где начало символа.</li>
+        <li>То, что человек видит как одну букву, бывает несколькими кодовыми точками: «é» = e + U+0301, 👍🏽 = палец + тон кожи.</li>
+      </ul>
+      <p class="note">Наберите текст или выберите пример. Нажмите на символ, чтобы увидеть его биты.</p>
+    </div>
+    <div class="demo" data-demo="utf8"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Длина строки — какая?</h2>
+      <div class="lens" role="table">
+        <div class="ln head" role="row"><span role="columnheader"></span><span role="columnheader">единица</span><code role="columnheader">"привет"</code><code role="columnheader">"😀"</code></div>
+        <div class="ln" role="row"><span role="rowheader">Go <code>len(s)</code>, Rust</span><span role="cell">байты UTF-8</span><b role="cell">12</b><b role="cell">4</b></div>
+        <div class="ln" role="row"><span role="rowheader">JS <code>.length</code>, Java, C#</span><span role="cell">единицы UTF-16</span><b role="cell">6</b><b role="cell">2</b></div>
+        <div class="ln" role="row"><span role="rowheader">Python <code>len(s)</code></span><span role="cell">кодовые точки</span><b role="cell">6</b><b role="cell">1</b></div>
+        <div class="ln" role="row"><span role="rowheader">Глазами человека</span><span role="cell">графемы</span><b role="cell">6</b><b role="cell">1</b></div>
+      </div>
+      <p class="note">JS и Java хранят строки в UTF-16: символы за пределами U+FFFF — пара суррогатов. Обрезка «по длине» рвёт символы, лимит <code>VARCHAR(n)</code> бывает в символах, а в байтах — у Redis и Kafka. MySQL <code>utf8</code> — это 3 байта и без эмодзи, нужен <code>utf8mb4</code>. Двигайте ползунок обрезки.</p>
+    </div>
+    <div class="demo" data-demo="truncate"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Ограничиваем имя пользователя 10 символами. Что выведет Go?</p>
+<pre class="code"><code>
+name := "Владислав"
+if len(name) > 10 {
+    name = name[:10] + "…"
+}
+fmt.Println(name)
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt">Владислав</button>
+      <button class="opt" data-correct>Влади…</button>
+      <button class="opt">Владисла…</button>
+      <button class="opt">Влад�…</button>
+      <div class="explain"><code>len</code> в Go — байты: «Владислав» занимает 18 байт, а 10 байт — ровно 5 кириллических букв. Повезло, что граница чётная: <code>name[:9]</code> разрезал бы букву пополам, и получилось бы «Влад�». Считайте символы через <code>utf8.RuneCountInString</code> и режьте по <code>[]rune</code>, а для эмодзи с модификаторами — по графемам.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split practice">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li>Байты файла или строки: <code>xxd</code>, <code>hexdump -C</code>, <code>od -An -tx1</code>.</li>
+        <li>Дробь как есть: Python <code>Decimal(0.1)</code> и <code>(0.1).hex()</code>, в JS <code>x.toPrecision(20)</code>.</li>
+        <li>Размеры и смещения полей: Go <code>unsafe.Sizeof</code>/<code>Offsetof</code>, C <code>pahole</code>, Java <a href="https://github.com/openjdk/jol">JOL</a>.</li>
+        <li>Память Python: <code>sys.getsizeof</code> (только сам объект), <code>tracemalloc</code> — реальные аллокации.</li>
+        <li>Порядок байтов машины: <code>lscpu | grep Endian</code>, <code>sys.byteorder</code>.</li>
+        <li>Длина в байтах: <code>len(s.encode())</code>, <code>Buffer.byteLength(s)</code>, <code>new TextEncoder().encode(s).length</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ printf 'Hi, Мир 😀' | xxd -g1
+00000000: 48 69 2c 20 d0 9c d0 b8 d1 80 20 f0 9f 98 80
+
+>>> from decimal import Decimal
+>>> print(Decimal(0.1))
+0.1000000000000000055511151231257827021181583404541015625
+>>> (0.1).hex()
+'0x1.999999999999ap-4'
+
+$ java -jar jol-cli.jar internals java.lang.Integer
+ OFF  SZ   TYPE DESCRIPTION     VALUE
+   0   8        (object header: mark)
+   8   4        (object header: class)
+  12   4    int Integer.value
+Instance size: 16 bytes
+</code></pre>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>В памяти только байты. Тип — договорённость о том, как их читать: целое, дробь, символ или адрес.</li>
+      <li>Целые фиксированного размера ходят по кругу. Знайте размер своих типов и проверяйте границы там, где растут счётчики, время и размеры.</li>
+      <li>Дробные числа — приближение с ~16 цифрами (у <code>float32</code> — 7). Не сравнивайте на равенство и не храните во float деньги. В JS целые точны до 2⁵³.</li>
+      <li>Порядок байтов важен, как только байты покидают процесс: сеть, файлы, бинарные протоколы.</li>
+      <li>Поля выравниваются, объекты в Python и Java несут заголовки. Массив значений подряд меньше и быстрее массива указателей.</li>
+      <li>Строка — это байты в кодировке. Длина в байтах, в UTF-16 и в символах — три разных числа.</li>
+    </ul>
+    <p class="proverb">Компьютер не знает, что такое число. Он знает только байты и инструкцию, которая их читает.</p>
+    <p class="controls"><a class="btn primary back-link" href="/">К списку презентаций</a><a class="btn back-link" href="/cpu/">Дальше: процессор →</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-layout.js"></script>
+</body>
+</html>

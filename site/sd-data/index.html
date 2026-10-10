@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Данные в масштабе — интерактивная презентация</title>
+  <meta name="description" content="Системный дизайн: выбор хранилища, репликация и фейловер, кворумы, конфликты, модели консистентности, CAP и PACELC, шардирование, консистентное хеширование, 2PC, CQRS и генерация ID.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero" aria-hidden="true">
+      <svg viewBox="0 0 320 250">
+        <g class="hero-shard" transform="translate(10 18)">
+          <text x="45" y="0">шард 1</text>
+          <rect class="lead-n" x="5" y="14" width="80" height="46" rx="8"/><text class="in" x="45" y="42">лидер</text>
+          <rect class="fol" x="5" y="96" width="80" height="40" rx="8"/><text class="in2" x="45" y="121">реплика</text>
+          <rect class="fol" x="5" y="168" width="80" height="40" rx="8"/><text class="in2" x="45" y="193">реплика</text>
+          <path class="arr" d="M45 62v30M45 138v26"/>
+        </g>
+        <g class="hero-shard" transform="translate(115 18)">
+          <text x="45" y="0">шард 2</text>
+          <rect class="fol" x="5" y="14" width="80" height="46" rx="8"/><text class="in2" x="45" y="42">реплика</text>
+          <rect class="lead-n" x="5" y="96" width="80" height="40" rx="8"/><text class="in" x="45" y="121">лидер</text>
+          <rect class="fol" x="5" y="168" width="80" height="40" rx="8"/><text class="in2" x="45" y="193">реплика</text>
+          <path class="arr" d="M45 92v-28M45 138v26"/>
+        </g>
+        <g class="hero-shard" transform="translate(220 18)">
+          <text x="45" y="0">шард 3</text>
+          <rect class="fol" x="5" y="14" width="80" height="46" rx="8"/><text class="in2" x="45" y="42">реплика</text>
+          <rect class="fol hot" x="5" y="96" width="80" height="40" rx="8"/><text class="in2" x="45" y="121">отстаёт</text>
+          <rect class="lead-n" x="5" y="168" width="80" height="40" rx="8"/><text class="in" x="45" y="193">лидер</text>
+          <path class="arr" d="M45 64v28M45 164v-26"/>
+        </g>
+      </svg>
+    </div>
+    <div class="stack">
+      <span class="tech">Системный дизайн · 3</span>
+      <h1>Данные в масштабе</h1>
+      <p class="lead">Репликация, шардирование и консистентность: что происходит с данными, когда один сервер уже не справляется, — и какие компромиссы от вас ждут на собеседовании и в проде.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки. Предыдущие части: <a href="/sd-approach/">подход</a>, <a href="/sd-scaling/">масштабирование</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Хранилище — под паттерн доступа</h2>
+      <p class="lead">Сначала вопросы: как читаем (по ключу, по диапазону, поиском, агрегатом), сколько пишем, нужны ли транзакции между сущностями. Ответ определяет класс хранилища, а не мода.</p>
+      <p class="note">Подробно о каждой технологии — в презентации <a href="/backend-stack/">«Бэкенд-стек»</a>. На собеседовании назовите паттерн, выбор и цену: «Cassandra, потому что 200 тыс. записей в секунду и чтение только по chat_id; платим отсутствием join и транзакций».</p>
+      <p class="note">Выберите паттерн доступа.</p>
+    </div>
+    <div class="demo" data-demo="storepick"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Лидер и реплики: синхронно или нет</h2>
+      <ul class="points">
+        <li>Все записи идут в лидер, он шлёт журнал изменений репликам. Читать можно с любых узлов.</li>
+        <li><b>Асинхронно</b>: коммит не ждёт реплик. Быстро, но при падении лидера теряется всё, что не доехало.</li>
+        <li><b>Синхронно</b>: коммит ждёт подтверждения. Каждая запись платит сетевой RTT, а падение реплики останавливает запись.</li>
+        <li>Компромисс — кворум: ждать любую одну из двух (<code>ANY 1 (r1, r2)</code> в Postgres, semi-sync в MySQL).</li>
+      </ul>
+      <p class="note">Выберите режим и где стоит r2. RTT: та же зона ~0,3 мс, соседняя зона ~1,5 мс, другой регион 60–90 мс.</p>
+    </div>
+    <div class="demo" data-demo="syncmode"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Лаг реплик: «я же только что сохранил»</h2>
+      <p class="lead">Асинхронная реплика отстаёт на миллисекунды, а под нагрузкой или во время долгого запроса — на секунды. Пользователь сохраняет профиль, страница перечитывает его с реплики — и показывает старое.</p>
+      <ul class="points">
+        <li><b>Чтение с лидера</b> какое-то время после своей записи.</li>
+        <li><b>Липкая реплика</b>: пользователь всегда читает с одной и той же. Не уходит назад во времени, но свою запись может не увидеть.</li>
+        <li><b>Позиция в журнале</b>: клиент помнит LSN своей записи, реплика отвечает, только догнав его.</li>
+      </ul>
+      <p class="note">Сохраните имя и сразу откройте профиль. Переключайте стратегии чтения.</p>
+    </div>
+    <div class="demo" data-demo="ryw"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Фейловер и split brain</h2>
+      <p class="lead">Лидер перестал отвечать: умер или просто отрезан сетью? Снаружи не отличить. Если назначить нового лидера, а старый жив, — лидеров два, и оба принимают запись.</p>
+      <ul class="points">
+        <li>Лидером становится только тот, за кого проголосовало большинство (Raft, etcd, Patroni). Каждые выборы — новый номер эпохи (term).</li>
+        <li>Старый лидер в меньшинстве сам снимает с себя роль, когда истекает аренда (lease).</li>
+        <li>Fencing token: хранилище отвергает запросы со старой эпохой — даже если старый лидер проснулся после паузы GC.</li>
+      </ul>
+      <p class="note">Разрежьте сеть, запишите с обеих сторон и восстановите связь — с защитой и без.</p>
+    </div>
+    <div class="demo" data-demo="splitbrain"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Без лидера: кворумы N, W, R</h2>
+      <p class="lead">В Dynamo-подобных базах (Cassandra, ScyllaDB, Riak) пишет любой узел: координатор шлёт запись всем N репликам и ждёт W ответов, чтение опрашивает R реплик и берёт самую свежую версию.</p>
+      <ul class="points">
+        <li><code>W + R &gt; N</code> — множества записи и чтения пересекаются, чтение увидит последнюю подтверждённую запись.</li>
+        <li>Запись переживает падение <code>N − W</code> узлов, чтение — <code>N − R</code>.</li>
+        <li>Отставшие реплики догоняют при чтении (read repair) и фоновой сверкой (anti-entropy).</li>
+      </ul>
+      <p class="note">Двигайте N, W, R, нажимайте на узлы, чтобы ронять их, пишите и читайте.</p>
+    </div>
+    <div class="demo" data-demo="quorum"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Конфликты записи</h2>
+      <p class="lead">Несколько лидеров (по одному в каждом ДЦ, офлайн-клиенты, совместное редактирование) или кворумы без лидера — значит, две записи одного ключа могут случиться одновременно. Кто-то должен их слить.</p>
+      <ul class="points">
+        <li><b>Last write wins</b>: побеждает бо́льшая метка времени. Просто, но одна запись молча пропадает, а часы серверов расходятся на миллисекунды.</li>
+        <li><b>Векторы версий</b> отличают «позже» от «одновременно» и отдают приложению обе версии.</li>
+        <li><b>CRDT</b> — типы данных, которые сливаются сами: счётчики, множества, текст (Riak, Redis Enterprise, Automerge).</li>
+      </ul>
+      <p class="note">Корзина {молоко}. В Европе удаляют молоко и кладут книгу, в США одновременно кладут чайник. Выберите стратегию и синхронизируйте.</p>
+    </div>
+    <div class="demo" data-demo="conflict"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Лестница моделей консистентности</h2>
+    <p class="lead">Чем выше ступень, тем меньше странностей видит клиент — и тем больше координации, задержки и недоступности при сбоях. Требование выбирают для каждой операции, а не для всей системы.</p>
+    <div class="ladder">
+      <div class="lad s5"><b>Линеаризуемость</b><span>Система ведёт себя как одна копия: после завершения записи все чтения видят её. Нужна для блокировок, выбора лидера, уникальности, остатков на счёте.</span><em>etcd, ZooKeeper (запись), Spanner, Postgres на одном узле</em></div>
+      <div class="lad s4"><b>Последовательная</b><span>Все видят операции в одном общем порядке, но он может отставать от реального времени.</span><em>чтения ZooKeeper с follower</em></div>
+      <div class="lad s3"><b>Причинная</b><span>Если B — следствие A, никто не увидит B без A: ответ на комментарий не появится раньше самого комментария.</span><em>MongoDB causal sessions, COPS</em></div>
+      <div class="lad s2"><b>Чтение своих записей и монотонность</b><span>Гарантии одного клиента: видит то, что сам записал, и не откатывается назад при повторном чтении.</span><em>липкие сессии, токены LSN</em></div>
+      <div class="lad s1"><b>В конечном счёте (eventual)</b><span>Если записи прекратятся, реплики когда-нибудь сойдутся. Когда — не обещано.</span><em>DNS, Cassandra с ONE, чтения DynamoDB по умолчанию</em></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>CAP и PACELC</h2>
+      <p class="lead">CAP говорит одно: при разрыве сети (P) узел, который не видит остальных, либо отвечает и рискует отдать старые данные (A), либо отказывает (C). «Выбрать два из трёх» — неверная формулировка: разрывы не выбирают.</p>
+      <p class="lead">PACELC добавляет главное: <b>E</b>lse, без разрыва, выбор между задержкой (<b>L</b>) и консистентностью (<b>C</b>). Это цена каждого запроса, а не только аварии.</p>
+      <p class="note">Три реплики: две в ДЦ A, одна в ДЦ B. Разрежьте сеть, попробуйте писать и читать в CP- и AP-режиме; посмотрите, как RTT между ДЦ влияет на задержку.</p>
+    </div>
+    <div class="demo" data-demo="cap"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Cassandra, коэффициент репликации 3, запись и чтение с <code>CONSISTENCY QUORUM</code>. Одна из трёх реплик ключа упала. Что будет?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Запись остановится, чтение продолжит работать</button>
+      <button class="opt text" data-correct>Запись и чтение работают, и чтение видит последнюю запись</button>
+      <button class="opt text">Всё работает, но чтение может вернуть старое значение</button>
+      <button class="opt text">Всё остановится, пока реплика не вернётся</button>
+      <div class="explain">QUORUM для трёх реплик — два узла. Два живы, значит W = 2 и R = 2 набираются, а 2 + 2 &gt; 3 — множества пересекаются. Упадёт вторая реплика — оба запроса получат <code>UnavailableException</code>. С <code>ONE</code> система переживёт и это, но чтение сможет вернуть устаревшее значение.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Шардирование: по диапазону или по хешу</h2>
+      <ul class="points">
+        <li><b>Диапазон</b> ключей на шард: запросы «от — до» идут в один шард, но последовательные ключи (время, автоинкремент) пишутся в один и тот же последний шард.</li>
+        <li><b>Хеш</b> ключа: нагрузка ровная, но любой запрос по диапазону опрашивает все шарды.</li>
+        <li><b>Горячий ключ</b> (знаменитость, вирусный пост) не лечится ни тем, ни другим: ключ всегда в одном шарде. Помогает соль — <code>key#0..key#7</code> — и кэш перед базой.</li>
+      </ul>
+      <p class="note">Выберите нагрузку и способ разбиения. Красная черта — потолок одного шарда, ~12 тыс. запросов в секунду.</p>
+    </div>
+    <div class="demo" data-demo="partition"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Вторичные индексы на шардах</h2>
+    <p class="lead">Таблица шардирована по <code>user_id</code>, а искать нужно по городу. Индекс по городу можно хранить двумя способами.</p>
+    <div class="si-cols">
+      <div class="si-col">
+        <h3>Локальный индекс</h3>
+        <div class="si-pic" aria-hidden="true">
+          <div class="si-shard"><b>шард 1</b><span class="d">u1 Москва</span><span class="d">u4 Казань</span><span class="i">idx: Казань→u4, Москва→u1</span></div>
+          <div class="si-shard"><b>шард 2</b><span class="d">u2 Москва</span><span class="d">u7 Пермь</span><span class="i">idx: Москва→u2, Пермь→u7</span></div>
+        </div>
+        <ul class="points">
+          <li>Каждый шард индексирует свои строки. Запись — в один шард, атомарно.</li>
+          <li>Поиск по городу — во все шарды (scatter-gather). Задержка = самый медленный шард.</li>
+          <li>MongoDB, Elasticsearch, Cassandra SAI, Citus.</li>
+        </ul>
+      </div>
+      <div class="si-col">
+        <h3>Глобальный индекс</h3>
+        <div class="si-pic" aria-hidden="true">
+          <div class="si-shard"><b>шард 1</b><span class="d">u1 Москва</span><span class="d">u4 Казань</span><span class="i">idx А–Л: Казань→u4</span></div>
+          <div class="si-shard"><b>шард 2</b><span class="d">u2 Москва</span><span class="d">u7 Пермь</span><span class="i">idx М–Я: Москва→u1, u2; Пермь→u7</span></div>
+        </div>
+        <ul class="points">
+          <li>Индекс сам шардирован — по значению. Поиск по городу идёт в один шард.</li>
+          <li>Запись затрагивает несколько шардов. Обычно индекс обновляется асинхронно и отстаёт.</li>
+          <li>DynamoDB GSI (только eventual), Spanner, CockroachDB (синхронно, ценой распределённой транзакции).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Решардинг: mod N против кольца</h2>
+      <p class="lead"><code>shard = hash(key) % N</code> — при переходе с N на N + 1 шардов меняет адрес почти каждый ключ: переезжает доля N/(N + 1) данных. Консистентное хеширование кладёт шарды и ключи на кольцо, ключ принадлежит следующему шарду по часовой — и при добавлении шарда переезжает только ~1/(N + 1).</p>
+      <p class="note">Несколько точек на шард (виртуальные узлы) выравнивают нагрузку. Тот же приём — в <a href="/probabilistic-structures/">вероятностных структурах</a>. Добавляйте и убирайте шарды в разных режимах.</p>
+    </div>
+    <div class="demo" data-demo="rehash"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Фиксированные партиции и каталог</h2>
+      <ul class="points">
+        <li><b>Партиций заранее больше, чем узлов</b>: ключ → партиция по хешу навсегда, а партиции целиком переезжают между узлами. Redis Cluster — 16 384 слота, Elasticsearch — число шардов задаётся при создании индекса.</li>
+        <li><b>Каталог</b>: отдельный сервис хранит «диапазон → шард» и делит разросшиеся диапазоны (MongoDB config servers, Vitess, HBase, Bigtable). Гибко, но каталог — ещё одна критичная зависимость; его кэшируют на клиентах.</li>
+        <li>Kafka: <code>partition = hash(key) % partitions</code>. Добавили партиции — ключи переехали, порядок сообщений по ключу нарушился.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <pre class="code"><code class="lang-plain">
+# Redis Cluster: слот = CRC16(key) mod 16384
+CLUSTER KEYSLOT user:42          → 15880
+CLUSTER KEYSLOT {user:42}:cart   → 15880  # тот же слот
+# multi-key операции только в одном слоте
+
+# MongoDB: ключ шардирования и чанки
+sh.shardCollection("app.msgs", { chat_id: "hashed" })
+sh.status()   # какие чанки на каком шарде
+      </code></pre>
+      <p class="note">Ключ шардирования выбирают по самому частому запросу: он должен попадать в один шард. Менять его потом — значит переливать все данные.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Мессенджер. Таблица сообщений шардирована по хешу <code>message_id</code>. Самый частый запрос — последние 50 сообщений чата. Что не так?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Хеш создаёт горячие шарды</button>
+      <button class="opt text" data-correct>Каждый такой запрос опрашивает все шарды — шардировать надо по chat_id</button>
+      <button class="opt text">Всё правильно: хеш даёт ровную нагрузку</button>
+      <button class="opt text">Надо шардировать по времени отправки</button>
+      <div class="explain">Ключ шардирования должен совпадать с ключом самого частого запроса. Здесь сообщения одного чата раскиданы по всем шардам, и каждое открытие чата — scatter-gather с задержкой самого медленного шарда. Discord хранит сообщения в Cassandra с ключом партиции <code>(channel_id, bucket)</code>, где bucket — окно времени, чтобы огромные чаты не превращались в бесконечную партицию. По времени — все записи в один последний шард.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Транзакция через шарды: 2PC</h2>
+      <p class="lead">Запрос и транзакция внутри шарда — дешёвые. Через шарды — нужен двухфазный коммит: координатор спрашивает всех «готовы?» (PREPARE), и только если все сказали «да», рассылает COMMIT.</p>
+      <ul class="points">
+        <li>Цена: 2 круга по сети и несколько fsync на каждую транзакцию; блокировки держатся всё это время.</li>
+        <li>Координатор упал после PREPARE — участники не могут ни закоммитить, ни откатить и держат блокировки, пока он не вернётся.</li>
+        <li>Поэтому 2PC стараются не применять: подбирают ключ шардирования, чтобы транзакция жила в одном шарде, или используют саги — о них в <a href="/sd-distributed/">следующей части</a>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="twopc"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Денормализация и CQRS</h2>
+      <ul class="points">
+        <li>Join через шарды дорог, поэтому данные копируют туда, где их читают: имя автора — в пост, счётчик лайков — в карточку.</li>
+        <li>CQRS доводит идею до конца: запись — в нормализованную модель, чтение — из моделей, собранных под конкретные запросы.</li>
+        <li>Модели чтения обновляются из журнала изменений (outbox или CDC через Debezium → Kafka). Они отстают на десятки миллисекунд — секунды, и их можно пересобрать, проиграв журнал заново.</li>
+        <li>Цена: несколько копий, eventual consistency и код, который следит, чтобы копии не разошлись.</li>
+      </ul>
+    </div>
+    <div class="cq" aria-hidden="true">
+      <div class="cq-row"><span class="cq-box cmd">команда: <code>PlaceOrder</code></span></div>
+      <div class="cq-arrow">↓</div>
+      <div class="cq-row"><span class="cq-box main">PostgreSQL — модель записи<small>нормализованная, транзакции, источник истины</small></span></div>
+      <div class="cq-arrow">↓ outbox / CDC</div>
+      <div class="cq-row"><span class="cq-box log">Kafka — журнал событий<small>OrderPlaced, OrderPaid, …</small></span></div>
+      <div class="cq-arrow">↓ проекции</div>
+      <div class="cq-row three">
+        <span class="cq-box rd">Elasticsearch<small>поиск заказов</small></span>
+        <span class="cq-box rd">Redis<small>статус, счётчики</small></span>
+        <span class="cq-box rd">ClickHouse<small>отчёты</small></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Генерация ID без центра</h2>
+      <ul class="points">
+        <li><b>Автоинкремент</b>: компактно и по порядку, но один источник на всё — не годится для многих шардов. Ещё и выдаёт число заказов конкурентам.</li>
+        <li><b>UUIDv4</b>: 122 случайных бита, генерируется где угодно, 16 байт, никакого порядка.</li>
+        <li><b>UUIDv7</b>: 48 бит времени в мс + случайные биты. Сортируется по времени (<code>uuidv7()</code> в Postgres 18).</li>
+        <li><b>Snowflake</b> (Twitter, Discord, Instagram): 64 бита, влезает в <code>bigint</code>, растёт со временем. Нужно раздать узлам номера и следить за часами.</li>
+      </ul>
+      <p class="note">Генерируйте ID и смотрите, из чего он состоит. Попробуйте перевести часы назад.</p>
+    </div>
+    <div class="demo" data-demo="snowflake"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Почему случайный UUID тормозит вставки</h2>
+      <p class="lead">Первичный ключ — B-дерево. Растущие ключи всегда попадают в самую правую страницу: она горячая и лежит в памяти. Случайные ключи попадают в случайную страницу.</p>
+      <ul class="points">
+        <li>Пока индекс меньше кэша — разницы почти нет. Когда больше — почти каждая вставка читает страницу с диска.</li>
+        <li>Страницы делятся пополам и в среднем заполнены на ~70% — индекс больше.</li>
+        <li>Первое изменение страницы после контрольной точки пишет её в WAL целиком — 8 КБ на вставку.</li>
+      </ul>
+      <p class="note">Вставляйте ключи в индекс. Кэш вмещает 12 страниц.</p>
+    </div>
+    <div class="demo" data-demo="idinsert"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Таблица на 500 млн строк, первичный ключ — UUIDv4. Индекс ключа 40 ГБ, RAM 32 ГБ. Вставки становятся всё медленнее, процессор при этом свободен. Почему?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Генерация UUID дорогая</button>
+      <button class="opt text">Сравнивать 16-байтные ключи медленнее, чем 8-байтные</button>
+      <button class="opt text" data-correct>Каждая вставка попадает в случайную страницу индекса, которой часто нет в памяти</button>
+      <button class="opt text">Растёт вероятность коллизий UUID</button>
+      <div class="explain">Рабочий набор случайных вставок — весь индекс, и он не помещается в память: вставка ждёт чтения с диска, а после каждой контрольной точки страница целиком уходит в WAL. С UUIDv7 или <code>bigint</code> из Snowflake вставки идут в правый край индекса, который всегда горячий. Коллизии UUIDv4 на таком объёме практически невозможны.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>На собеседовании и в проде</h2>
+      <ul class="points">
+        <li>Оцените нагрузку и проверьте, нужен ли шардинг вообще: один Postgres на NVMe держит 10–50 тыс. записей и сотни тысяч чтений по индексу в секунду и несколько ТБ данных.</li>
+        <li>Сначала реплики для чтения и кэш, потом шардирование. Назовите ключ шардирования и самый частый запрос по нему.</li>
+        <li>Для каждой операции — требуемая консистентность: платёж линеаризуем, лента — eventual.</li>
+        <li>Проговорите сбои: упал лидер, лаг реплики, горячий ключ, разрыв между ДЦ, добавление шарда.</li>
+      </ul>
+    </div>
+    <pre class="code"><code class="lang-plain">
+-- Postgres: лаг реплик на лидере
+SELECT client_addr, state, sync_state, replay_lag
+  FROM pg_stat_replication;
+-- на реплике: до какой позиции дошли
+SELECT pg_last_wal_replay_lsn(),
+       now() - pg_last_xact_replay_timestamp() AS lag;
+
+# Cassandra: узлы, токены, где лежит ключ
+nodetool status
+nodetool getendpoints app messages 'chat:42'
+
+# Redis Cluster: слоты и баланс
+redis-cli --cluster check 10.0.0.1:6379
+
+# Kafka: отставание потребителей (модели чтения)
+kafka-consumer-groups.sh --describe --group projections
+    </code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Хранилище — по паттерну доступа. Один хороший сервер тянет больше, чем кажется: сначала посчитайте.</li>
+      <li>Асинхронная реплика теряет хвост при фейловере, синхронная платит RTT. Лаг ломает «чтение своих записей» — лечится маршрутизацией чтений.</li>
+      <li>Лидера выбирает большинство, старого отсекают эпохой и fencing token. Кворумы: <code>W + R &gt; N</code>.</li>
+      <li>LWW теряет данные, векторы версий находят конфликты, CRDT их сливают. CAP — про разрыв сети, PACELC — про цену каждого запроса.</li>
+      <li>Ключ шардирования = ключ частого запроса. Горячие ключи — солью и кэшем, решардинг — кольцом или фиксированными партициями.</li>
+      <li>Избегайте 2PC, денормализуйте под чтение, ID делайте растущими: UUIDv7 или Snowflake.</li>
+    </ul>
+    <p class="proverb">Распределённые данные — это выбор, что именно вы готовы увидеть устаревшим.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-shard.js"></script>
+</body>
+</html>

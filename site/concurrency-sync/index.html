@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Гонки, блокировки и атомики — интерактивная презентация</title>
+  <meta name="description" content="Гонки данных и гонки условий, мьютексы и futex, взаимные блокировки, атомарные операции и CAS, модель памяти и переупорядочивание, закон Амдала и race detector.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-race" aria-hidden="true">
+      <div class="hr-mem"><span>x</span><b>1</b><em>а должно быть 2</em></div>
+      <div class="hr-lanes">
+        <div class="hr-lane"><span class="hr-t">T1</span><i class="ld">load 0</i><i class="ad">+1</i><i class="sp"></i><i class="st">store 1</i></div>
+        <div class="hr-lane"><span class="hr-t">T2</span><i class="sp"></i><i class="ld">load 0</i><i class="ad">+1</i><i class="st lost">store 1</i></div>
+      </div>
+      <div class="hr-time">время →</div>
+    </div>
+    <div class="stack">
+      <h1>Гонки, блокировки и атомики</h1>
+      <p class="lead">Почему <code>counter++</code> из двух потоков теряет обновления, как устроен мьютекс, откуда берутся дедлоки, что гарантируют атомарные операции и почему процессор вправе переставить ваши записи.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки. Предыдущая тема — <a href="/processes-threads/">процессы и потоки</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Гонка данных: <code>counter++</code> — это три операции</h2>
+      <p class="lead">Процессор не умеет «прибавить к памяти» одним неделимым шагом без специального префикса. Компилятор превращает инкремент в загрузку в регистр, сложение и запись обратно.</p>
+<pre class="code"><code class="lang-plain">mov  eax, [counter]   ; load
+add  eax, 1           ; add
+mov  [counter], eax   ; store</code></pre>
+      <p class="note">Гонка данных (data race) — два потока обращаются к одной переменной без синхронизации, и хотя бы один пишет. Попробуйте выбрать порядок шагов так, чтобы одно прибавление потерялось.</p>
+    </div>
+    <div class="demo" data-demo="race-step"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Потерянные обновления в цифрах</h2>
+      <ul class="points">
+        <li>На многоядерной машине потоки идут по-настоящему параллельно: окна «load…store» разных ядер постоянно перекрываются.</li>
+        <li>Реальный прогон на Go: 4 горутины × 1&nbsp;000&nbsp;000 инкрементов дают около 1,3–2,5 млн вместо 4 млн. Каждый запуск — другое число.</li>
+        <li>Чем больше ядер и короче цикл, тем больше потерь. На одном ядре гонка срабатывает редко — переключение должно попасть между load и store, — но тогда поток затирает всё, что другие насчитали за его отсутствие.</li>
+        <li>Атомарный инкремент — <code>lock xadd</code> на x86 — держит кэш-линию на время операции, и ни одно обновление не теряется.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="race-run"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В CPython есть GIL: в каждый момент байткод выполняет только один поток. Безопасен ли <code>counter += 1</code> из нескольких потоков <code>threading</code>?</p>
+<pre class="code"><code class="lang-plain">LOAD_GLOBAL  counter
+LOAD_CONST   1
+BINARY_OP    +=
+STORE_GLOBAL counter</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Да: GIL не даёт двум потокам работать одновременно</button>
+      <button class="opt text" data-correct>Нет: поток может переключиться между байткодами, и обновление потеряется</button>
+      <button class="opt text">Да, но только для чисел меньше 2³⁰</button>
+      <button class="opt text">Нет, и интерпретатор упадёт с ошибкой</button>
+      <div class="explain">GIL защищает внутренности интерпретатора, а не ваши инварианты. <code>+=</code> — несколько байткодов, и переключение между LOAD и STORE теряет обновление. В 3.10+ переключения стали реже, и тест «вроде проходит», но гарантии нет, а в сборке без GIL (3.13t) потери видны сразу. Нужен <code>threading.Lock</code>. В Node.js гонки данных между колбэками невозможны — один поток, — но гонки условий через <code>await</code> никуда не делись.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Гонка условий: проверил — и опоздал</h2>
+      <p class="lead">Гонка условий (race condition) шире гонки данных: каждая операция может быть атомарной, а результат всё равно зависит от порядка. Классика — «проверить, потом действовать».</p>
+      <ul class="points">
+        <li>Двойная бронь, двойное списание, два пользователя с одним email.</li>
+        <li>TOCTOU: <code>if not exists(path): open(path, "w")</code>. Между проверкой и созданием файл может появиться. Правильно — одним вызовом: <code>O_CREAT | O_EXCL</code>.</li>
+        <li>Мьютекс в процессе не спасает, если сервис запущен в двух экземплярах.</li>
+      </ul>
+      <p class="note">Выберите вариант и проходите по шагам: запросы Алисы и Боба приходят одновременно.</p>
+    </div>
+    <div class="demo" data-demo="booking"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Критическая секция и мьютекс</h2>
+      <p class="lead">Мьютекс превращает «load, add, store» в критическую секцию: внутри в каждый момент только один поток. Остальные ждут у входа.</p>
+<pre class="code"><code>mu.Lock()
+counter++ // критическая секция
+mu.Unlock()</code></pre>
+      <p class="note">Счётчик теперь точный, но за это платят ожиданием. Двигайте ползунок: чем большую долю времени поток проводит под замком, тем больше остальные стоят в очереди и тем меньше выигрыш от добавления потоков.</p>
+    </div>
+    <div class="demo" data-demo="mutex"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как устроен мьютекс: спин, futex, сон</h2>
+      <ul class="points">
+        <li>Мьютекс — это слово в памяти. Свободный захват — одна атомарная операция CAS, ~10–20 нс, без ядра.</li>
+        <li>Занято — можно покрутиться (spin) в надежде, что владелец скоро выйдет. Если нет — уснуть через <code>futex(FUTEX_WAIT)</code>: ядро снимает поток с CPU.</li>
+        <li>Будить спящего — системный вызов <code>FUTEX_WAKE</code> и переключение контекста: единицы микросекунд, в сотни раз дороже захвата.</li>
+        <li>Go: <code>sync.Mutex</code> немного крутится, потом паркует горутину; если ждут дольше 1 мс — переходит в честный режим. Java: <code>synchronized</code> так же крутится, потом паркует поток.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="futex"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Взаимная блокировка</h2>
+      <p class="lead">Перевод денег: заблокировать счёт-источник, потом счёт-получатель. Два встречных перевода — и каждый держит то, что нужно другому.</p>
+      <p class="note">Дедлок возможен, только если выполнены все четыре условия Коффмана: взаимное исключение, «держу и жду», нельзя отобрать ресурс, циклическое ожидание. Проще всего сломать последнее: брать блокировки всегда в одном порядке, например по id.</p>
+      <p class="note">Ходите потоками по одному шагу. Потом включите упорядочивание и попробуйте снова.</p>
+    </div>
+    <div class="demo" data-demo="deadlock"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Кто ловит дедлоки, и чем ещё можно застрять</h2>
+    <div class="fit">
+      <div class="fit-col no">
+        <h3>Как застревают</h3>
+        <ul>
+          <li><b>Дедлок</b> — все ждут друг друга, CPU не тратится. Go замечает только полную остановку: <code>fatal error: all goroutines are asleep</code>. Частичный дедлок висит молча.</li>
+          <li><b>Livelock</b> — все заняты, прогресса нет: два потока одновременно отпускают замок, ждут одинаково и снова сталкиваются. CPU 100%.</li>
+          <li><b>Голодание</b> — система работает, но один поток никогда не получает замок: его постоянно обгоняют.</li>
+        </ul>
+      </div>
+      <div class="fit-col">
+        <h3>Что помогает</h3>
+        <ul>
+          <li>Единый порядок захвата; не вызывать чужой код под замком.</li>
+          <li>Тайм-ауты: <code>tryLock(timeout)</code>, <code>context</code> с дедлайном, <code>lock_timeout</code> в Postgres. Postgres сам ищет циклы через <code>deadlock_timeout</code> (1 с) и откатывает одну транзакцию.</li>
+          <li>Случайная пауза перед повтором (jitter) против livelock; честные блокировки и очереди против голодания.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Атомарные операции и CAS</h2>
+      <p class="lead">Процессор умеет атомарно выполнить «прочитать — изменить — записать» для одного слова: <code>lock xadd</code>, <code>lock cmpxchg</code> на x86, <code>ldaxr/stlxr</code> или LSE-инструкции на ARM.</p>
+<pre class="code"><code>for {
+    old := atomic.LoadInt64(&amp;x)
+    if atomic.CompareAndSwapInt64(&amp;x, old, old+1) {
+        break // никто не успел вмешаться
+    }
+    // кто-то изменил x — повторяем
+}</code></pre>
+      <p class="note">CAS (compare-and-swap) записывает новое значение, только если в памяти всё ещё старое. Добавляйте потоки и смотрите, как растёт число повторов.</p>
+    </div>
+    <div class="demo" data-demo="cas"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Lock-free стек и проблема ABA</h2>
+      <p class="lead">Стек Трайбера: <code>pop</code> читает вершину <code>A</code> и её <code>next</code>, затем делает <code>CAS(top, A, next)</code>. Если за это время вершина успела смениться и вернуться к <code>A</code>, CAS ничего не заметит.</p>
+      <p class="note">Так бывает, когда узлы переиспользуются: пул объектов, ручное освобождение памяти в C/C++. Лечится счётчиком версий рядом с указателем (двойной CAS) или безопасным освобождением: hazard pointers, epoch-based reclamation. В Go и Java сборщик мусора не отдаст узел, пока на него ссылается поток, — поэтому классическая ABA там редкость.</p>
+    </div>
+    <div class="demo" data-demo="aba"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Процессор переставляет операции</h2>
+      <p class="lead">У каждого ядра есть буфер записи (store buffer): запись уходит в него и попадает в кэш позже, а следующее чтение не ждёт. Для чужого ядра это выглядит так, будто чтение выполнилось раньше записи.</p>
+<pre class="code"><code class="lang-plain">x = y = 0
+T1: x = 1; r1 = y      T2: y = 1; r2 = x</code></pre>
+      <p class="note">При любом чередовании операций результат <code>r1&nbsp;=&nbsp;r2&nbsp;=&nbsp;0</code> невозможен. На реальном x86 он случается. ARM переставляет ещё больше, плюс переставляет компилятор. Пройдите по шагам, затем запустите тысячу прогонов с барьером и без.</p>
+    </div>
+    <div class="demo" data-demo="litmus"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Happens-before: что гарантирует язык</h2>
+      <p class="lead">Модели памяти Go, Java, C++ и JS устроены одинаково: если в программе нет гонок данных, она ведёт себя так, будто операции идут по очереди. Порядок между потоками создают только синхронизирующие операции.</p>
+      <ul class="points">
+        <li><code>Unlock</code> мьютекса происходит-до следующего <code>Lock</code>.</li>
+        <li>Отправка в канал — до получения; <code>wg.Done()</code> — до возврата <code>wg.Wait()</code>.</li>
+        <li>Атомарная запись — до атомарного чтения, которое её увидело. Java: <code>volatile</code>, C++: <code>std::atomic</code>, JS: <code>Atomics</code>.</li>
+      </ul>
+    </div>
+    <div class="stack">
+<pre class="code"><code>var data int
+var ready bool // нужен atomic.Bool
+
+go func() {
+    data = 42
+    ready = true
+}()
+
+for !ready { } // может никогда не выйти
+fmt.Println(data) // может напечатать 0</code></pre>
+      <p class="note">Без синхронизации компилятор вправе вынести чтение <code>ready</code> из цикла, а процессор ARM — сделать запись <code>ready</code> видимой раньше <code>data</code>. <code>volatile</code> в C/C++ здесь не помогает: он только для памяти устройств.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Ошибка двойной проверки</h2>
+      <p class="lead">Ленивая инициализация «без лишних блокировок»: проверить без замка, и только если пусто — взять замок и создать. Объект при этом может стать виден другому потоку недостроенным.</p>
+<pre class="code"><code class="lang-js">if (instance == null) {            // без замка
+  synchronized (lock) {
+    if (instance == null)
+      instance = new Config();     // выделить, заполнить, опубликовать
+  }
+}
+return instance;</code></pre>
+      <p class="note">Компилятор и процессор вправе опубликовать ссылку раньше, чем заполнены поля. Пройдите по шагам. Исправление: <code>volatile</code> в Java, <code>sync.Once</code> в Go, <code>std::call_once</code> или статическая локальная переменная в C++.</p>
+    </div>
+    <div class="demo" data-demo="dcl"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Горутина-воркер пишет результат в <code>result</code>, а затем ставит <code>done = true</code> (обычные переменные). Главная горутина ждёт <code>for !done {}</code> и читает <code>result</code>. Тесты на ноутбуке проходят. Что на самом деле?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Всё корректно: запись bool атомарна</button>
+      <button class="opt text">Корректно на x86, сломается только на ARM</button>
+      <button class="opt text" data-correct>Это гонка данных: цикл может стать бесконечным, а <code>result</code> — прочитаться старым</button>
+      <button class="opt text">Go запретит компиляцию такого кода</button>
+      <div class="explain">Атомарность записи bool не даёт порядка и видимости. Компилятор Go вправе прочитать <code>done</code> один раз до цикла — и цикл не закончится даже на x86. <code>go test -race</code> такой код ловит сразу. Правильно — <code>atomic.Bool</code>, канал или <code>sync.WaitGroup</code>: они создают отношение happens-before.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>RWMutex, семафор, условная переменная</h2>
+      <ul class="points">
+        <li><b>RWMutex</b> — много читателей или один писатель. Помогает при редкой записи и долгом чтении. При частой записи медленнее обычного мьютекса: у него дороже учёт.</li>
+        <li><b>Семафор</b> на N мест ограничивает параллелизм: не больше N запросов в базу, N загрузок. В Go — буферизованный канал или <code>semaphore.Weighted</code>.</li>
+        <li><b>Условная переменная</b> — «усни, пока не выполнится условие»: <code>for !cond { c.Wait() }</code>. Всегда в цикле: пробуждение не гарантирует, что условие истинно. Java: <code>wait/notify</code>, Python: <code>threading.Condition</code>.</li>
+      </ul>
+      <p class="note">Переключайте примитив и долю писателей: кто внутри, кто ждёт и сколько успели сделать.</p>
+    </div>
+    <div class="demo" data-demo="prims"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Закон Амдала и цена конкуренции</h2>
+      <p class="lead">Если доля <i>s</i> работы выполняется последовательно — под общим замком, в одном потоке, — ускорение на <i>N</i> ядрах не больше <code>1 / (s + (1 − s) / N)</code>. Предел — <code>1/s</code>, сколько ядер ни добавляй.</p>
+      <p class="note">На деле хуже: ядра ещё и согласуют кэш-линию замка между собой, и эта цена растёт с числом участников. После некоторого числа ядер добавление потоков замедляет программу. Модель с этим эффектом — универсальный закон масштабируемости Гюнтера.</p>
+      <p class="note">Лечат дроблением: шардированные счётчики и мапы, локальные буферы на поток со сбросом пачкой, обработка без общего состояния.</p>
+    </div>
+    <div class="demo" data-demo="amdahl"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис перенесли с 8 на 64 ядра, а пропускная способность почти не выросла. Мьютекс-профиль показывает: 40% времени запроса проходит под одним глобальным замком кэша. Какое ускорение максимально возможно, если ничего не менять в коде?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">8× — по числу добавленных ядер</button>
+      <button class="opt text">Около 1,6× — 60% параллельной работы</button>
+      <button class="opt text" data-correct>Не больше 2,5× от одного ядра, сколько ядер ни ставь</button>
+      <button class="opt text">64×, если увеличить GOMAXPROCS</button>
+      <div class="explain">Последовательная доля 0,4 даёт предел 1 / 0,4 = 2,5×. На 8 ядрах уже было 1 / (0,4 + 0,6/8) ≈ 2,1×, на 64 — ≈ 2,4×. Помогут только изменения кода: шардировать кэш, укоротить секцию, перейти на <code>sync.Map</code> или копирование при записи.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как увидеть у себя</h2>
+      <ul class="points">
+        <li><code>go test -race ./...</code> и <code>go run -race</code> — детектор гонок. В 2–20 раз медленнее, ловит только гонки, которые реально случились в прогоне, зато без ложных срабатываний. Держите в CI.</li>
+        <li>C/C++/Rust: <code>-fsanitize=thread</code> (ThreadSanitizer), то же устройство. Java: <code>jcmd &lt;pid&gt; Thread.print</code> сам находит дедлоки. Python: <code>py-spy dump</code>.</li>
+        <li>Контеншен: Go — <code>pprof</code> профили <code>mutex</code> и <code>block</code>; Linux — <code>perf lock</code>, <code>offcputime</code> из bcc; много <code>futex</code> в <code>strace -c</code> — потоки дерутся за замок.</li>
+        <li>Postgres: <code>pg_locks</code>, <code>pg_blocking_pids()</code>, <code>log_lock_waits</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">==================
+WARNING: DATA RACE
+Write at 0x00c0000140a8 by goroutine 8:
+  main.inc()
+      /app/main.go:12 +0x44
+
+Previous write at 0x00c0000140a8 by goroutine 7:
+  main.inc()
+      /app/main.go:12 +0x44
+
+Goroutine 8 (running) created at:
+  main.main()
+      /app/main.go:18 +0x7c
+==================</code></pre>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Что делать на практике</h2>
+    <div class="fit">
+      <div class="fit-col">
+        <h3>По порядку предпочтения</h3>
+        <ul>
+          <li><b>Не делить.</b> Состояние принадлежит одной горутине или потоку, остальные шлют ей сообщения через канал или очередь.</li>
+          <li><b>Не менять.</b> Неизменяемые объекты можно читать откуда угодно. Обновление — новая копия и атомарная замена ссылки.</li>
+          <li><b>Готовое.</b> Каналы, очереди, <code>ConcurrentHashMap</code>, <code>errgroup</code>, пулы. Потом — мьютекс с короткой секцией. Lock-free своими руками — в последнюю очередь.</li>
+        </ul>
+      </div>
+      <div class="fit-col">
+        <h3>Если процессов несколько</h3>
+        <ul>
+          <li>Мьютекс в памяти защищает один процесс. Между экземплярами сервиса — база: <code>UNIQUE</code>, условный <code>UPDATE … WHERE</code>, <code>SELECT … FOR UPDATE</code>, advisory locks.</li>
+          <li>Оптимистичная блокировка: колонка <code>version</code>, <code>UPDATE … WHERE version = $1</code>, при 0 строк — повторить.</li>
+          <li>Распределённые блокировки в Redis теряются при паузах GC и сбоях. Если от них зависит корректность — нужен fencing token, который проверяет само хранилище.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li><code>counter++</code> — load, add, store. Без синхронизации обновления теряются, и это норма, а не редкость.</li>
+      <li>«Проверил, потом сделал» превращайте в одну атомарную операцию — в том числе в базе.</li>
+      <li>Мьютекс дёшев без конкуренции и дорог с ней. Дедлоки лечатся единым порядком захвата и тайм-аутами.</li>
+      <li>Атомики и CAS — для одного слова. Компилятор и процессор переставляют операции: порядок между потоками дают только синхронизация и атомики.</li>
+      <li>5% работы под общим замком — не больше 20× ускорения. Гонки ищите с <code>-race</code> и TSan.</li>
+    </ul>
+    <p class="proverb">Не общайтесь через общую память — делитесь памятью, общаясь.<cite>Go Proverbs, Роб Пайк</cite></p>
+    <div class="controls"><a class="btn primary back-link" href="/">К списку презентаций</a><span class="note">Дальше — <a href="/async-io/">асинхронный ввод-вывод</a>: тысячи соединений без тысячи потоков.</span></div>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-atomics.js"></script>
+</body>
+</html>

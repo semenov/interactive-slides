@@ -64,6 +64,7 @@
 /* Small and selected buttons */
 .btn.small { min-height: 34px; font-size: 0.78em; padding: 0.3em 0.8em; }
 .btn.sel { background: var(--ink); color: #fff; }
+.btn.sel:hover:not(:disabled) { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
 
 /* Label chip (technology, topic) */
 .tech {

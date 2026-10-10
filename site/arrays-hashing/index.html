@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Массивы, списки и хеш-таблицы — интерактивная презентация</title>
+  <meta name="description" content="Массивы и динамические массивы, связные списки, стек, очередь и кольцевой буфер, хеш-функции и хеш-таблицы, dict в Python, map в Go, HashMap в Java, LRU-кэш и задачи на хеш-таблицу с собеседований.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-hash" aria-hidden="true">
+      <div class="hh-key"><span>"user:42"</span><i>→ hash →</i><b>0x9e37…c5</b></div>
+      <div class="hh-mask">0x…c5 &amp; 7 = <b>5</b></div>
+      <div class="hh-slots">
+        <span><small>0</small>"id"</span><span class="e"><small>1</small></span><span><small>2</small>"ts"</span><span class="t"><small>3</small>✝</span>
+        <span class="e"><small>4</small></span><span class="hit"><small>5</small>"user:42"</span><span><small>6</small>"ip"</span><span class="e"><small>7</small></span>
+      </div>
+      <div class="hh-list"><i>A</i><em>⇄</em><i>B</i><em>⇄</em><i>C</i><em>⇄</em><i class="old">D</i><span>LRU</span></div>
+    </div>
+    <div class="stack">
+      <h1>Массивы, списки и хеш-таблицы</h1>
+      <p class="lead">Почему вставка в начало списка стоит O(n), откуда у словаря O(1) и когда оно превращается в O(n), как устроены <code>dict</code> в Python, <code>map</code> в Go и <code>HashMap</code> в Java — и как узнать задачу на хеш-таблицу на собеседовании.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки, вводите ключи и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Массив: быстро по индексу, дорого в середине</h2>
+      <p class="lead">Массив — непрерывный кусок памяти: адрес i-го элемента = начало + i × размер элемента. Отсюда O(1) по индексу и быстрый последовательный проход. Но вставка или удаление в середине сдвигает весь хвост — O(n).</p>
+      <ul class="points">
+        <li>Динамический массив — <code>list</code> в Python, slice в Go, <code>ArrayList</code> в Java, <code>Array</code> в JS — держит запас ёмкости. Место кончилось — выделяет блок побольше и копирует всё.</li>
+        <li>Рост в k раз даёт амортизированное O(1) на <code>append</code>: копирований за всё время — не больше n·1/(k−1).</li>
+        <li><code>list</code> в Python хранит указатели на объекты, а не числа подряд — об этом в <a href="/data-in-memory/">«Данных в памяти»</a>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="array"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Связный список: красиво на доске, медленно в жизни</h2>
+      <p class="lead">Каждый узел — отдельный объект в куче. Адрес следующего узнаётся, только когда прочитан текущий, поэтому процессор не может подгрузить его заранее: каждое звено — возможный промах кэша, ~100 нс (<a href="/cpu/">подробнее о кэшах</a>).</p>
+      <ul class="points">
+        <li>Список нужен, когда узел <em>уже найден</em> и его надо вынуть или переставить за O(1): LRU-списки (memcached, <code>functools.lru_cache</code>), списки свободных блоков в аллокаторах, <code>list_head</code> в ядре Linux — узел встроен прямо в структуру.</li>
+        <li><code>LinkedList</code> в Java почти всегда медленнее <code>ArrayList</code> — даже на вставках в середину: найти позицию — те же O(n), но с промахами.</li>
+        <li><code>collections.deque</code> — компромисс: двусвязный список блоков по 64 элемента.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="chase"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Стек, очередь, дек и кольцевой буфер</h2>
+      <ul class="points">
+        <li><b>Стек</b> (последним пришёл — первым ушёл): <code>append</code>/<code>pop</code> у <code>list</code>, slice в Go, <code>ArrayDeque</code> в Java. Вызовы функций, отмена действий, скобки, обход в глубину.</li>
+        <li><b>Очередь</b> и <b>дек</b> — кольцевой буфер: <code>head</code> и <code>tail</code> бегут по кругу, элементы не сдвигаются. Так устроены <code>ArrayDeque</code>, буфер канала в Go (<a href="/go-channels/">про каналы</a>), очереди сетевой карты, <code>io_uring</code>, буфер <code>perf</code>.</li>
+        <li>При переполнении кольцо либо растёт (копия с «распрямлением»), либо затирает самое старое — так живут логи и метрики фиксированного размера.</li>
+      </ul>
+      <p class="note">Нажимайте кнопки и следите, как индексы переходят через конец массива: <code>(i + 1) % cap</code>.</p>
+    </div>
+    <div class="demo" data-demo="ring"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Воркер на Python разбирает очередь задач: <code>tasks</code> — обычный <code>list</code> на 1 000 000 элементов, в цикле <code>task = tasks.pop(0)</code>, пока список не опустеет. Сколько это стоит?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">O(n): каждый <code>pop</code> — O(1), миллион операций — доли секунды</button>
+      <button class="opt text" data-correct>O(n²): каждый <code>pop(0)</code> сдвигает весь хвост — сотни миллиардов перемещений, минуты</button>
+      <button class="opt text">O(n log n): <code>list</code> внутри устроен как дерево</button>
+      <button class="opt text">O(n): CPython замечает <code>pop(0)</code> и сдвигает начало массива</button>
+      <div class="explain"><code>pop(0)</code> делает <code>memmove</code> всех оставшихся указателей на одну позицию: в сумме n²/2 ≈ 5·10¹¹ перемещений, терабайты копирования. Очередь в Python — <code>collections.deque</code> с <code>popleft()</code> за O(1). То же в Go: <code>q = q[1:]</code> дёшево, но держит в памяти весь старый массив; в JS <code>Array.shift()</code> на больших массивах тоже O(n).</div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Хеш-функция: от ключа к корзине</h2>
+      <p class="lead">Хеш-функция превращает ключ в число, а остаток от деления на размер таблицы m — в номер корзины. Хорошая функция раскидывает даже похожие ключи равномерно: в каждой корзине ≈ n/m ключей.</p>
+      <ul class="points">
+        <li>m обычно степень двойки: вместо деления — <code>h &amp; (m − 1)</code>, то есть младшие биты. Java поэтому подмешивает к ним старшие: <code>h ^ (h &gt;&gt;&gt; 16)</code>.</li>
+        <li>Реальные функции: SipHash-1-3 для <code>str</code> в Python, aeshash/wyhash в Go, <code>31·h + c</code> в Java <code>String.hashCode()</code>. Строки кэшируют свой хеш — второй раз он не считается.</li>
+      </ul>
+      <p class="note">Введите ключ и выберите функцию. Гистограмма — 1000 ключей <code>user:1</code>…<code>user:1000</code>.</p>
+    </div>
+    <div class="demo" data-demo="hashfn"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Коллизии: цепочки или открытая адресация</h2>
+    <p class="lead">Два ключа попали в одну корзину — это нормально, вопрос в том, где хранить второй.</p>
+    <div class="fit cl-fit">
+      <div class="fit-col cl-col">
+        <h3>Цепочки (separate chaining)</h3>
+        <div class="cl-pic" aria-hidden="true">
+          <div class="cl-row"><b>0</b><i>"id"</i></div>
+          <div class="cl-row"><b>1</b></div>
+          <div class="cl-row"><b>2</b><i>"ts"</i><em>→</em><i>"ip"</i><em>→</em><i>"ua"</i></div>
+          <div class="cl-row"><b>3</b><i>"user"</i></div>
+        </div>
+        <ul>
+          <li>Корзина — список (или дерево) элементов. Удаление простое, перегрузку таблица переживает плавно.</li>
+          <li>Но узел — отдельная аллокация, а поиск — прыжки по памяти.</li>
+          <li>Java <code>HashMap</code>, C++ <code>std::unordered_map</code>, Go map до 1.24 (корзины по 8 + overflow-корзины).</li>
+        </ul>
+      </div>
+      <div class="fit-col cl-col">
+        <h3>Открытая адресация</h3>
+        <div class="cl-pic" aria-hidden="true">
+          <div class="cl-open"><i>"id"</i><i class="e"></i><i>"ts"</i><i class="p">"ip"</i><i class="p">"ua"</i><i>"user"</i><i class="e"></i><i class="e"></i></div>
+          <div class="cl-arrow">"ip" и "ua" хотели в 2 → заняли следующие свободные</div>
+        </div>
+        <ul>
+          <li>Всё в одном массиве. Корзина занята — идём дальше по правилу: линейно, квадратично или псевдослучайно.</li>
+          <li>Дружит с кэшем и не аллоцирует, но требует запаса места и надгробий при удалении.</li>
+          <li>Python <code>dict</code> и <code>set</code>, Go map с 1.24 (Swiss tables), Rust <code>HashMap</code>, Abseil <code>flat_hash_map</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Линейное пробирование и надгробия</h2>
+      <p class="lead">Вставка начинается с ячейки h(k) и идёт вправо до первого свободного места. Поиск идёт тем же путём и останавливается на пустой ячейке: дальше ключа быть не может.</p>
+      <ul class="points">
+        <li>Поэтому просто очистить ячейку при удалении нельзя — оборвётся путь к ключам за ней. Ставят надгробие (tombstone): поиск через него проходит, вставка может его занять.</li>
+        <li>Надгробия копятся и удлиняют поиск. Их вычищает перестройка таблицы.</li>
+      </ul>
+      <p class="note">Здесь h(k) = k mod 10 — последняя цифра. Вставьте 12, 22, 32, удалите 22 и найдите 32. Потом включите удаление без надгробия и повторите.</p>
+    </div>
+    <div class="demo" data-demo="probe"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Заполненность и перестройка</h2>
+      <p class="lead">Коэффициент заполнения α = n/m. При линейном пробировании поиск отсутствующего ключа стоит в среднем ½·(1 + 1/(1−α)²) проб: при α = 0,5 — 2,5, при 0,9 — уже 50. Поэтому таблицу расширяют заранее.</p>
+      <ul class="points">
+        <li>Рост — новый массив вдвое больше и вставка всех ключей заново: позиция <code>h &amp; (m−1)</code> зависит от m. Одна вставка стоит O(n), в среднем — O(1).</li>
+        <li>Пороги: Python <code>dict</code> — 2/3, Java <code>HashMap</code> — 0,75, Go Swiss tables — 7/8.</li>
+        <li>Пауза на рехеш заметна: Redis переносит корзины постепенно, Go 1.24 растит большие map частями по 1024 слота. Знаете размер — задайте сразу: <code>make(map[K]V, n)</code>, <code>HashMap.newHashMap(n)</code>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="resize"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>O(1) — в среднем. Атака hash flooding</h2>
+      <p class="lead">O(1) обещано для «случайных» ключей. Если подобрать ключи с одинаковым хешем, таблица вырождается в список: n вставок — n²/2 сравнений.</p>
+      <ul class="points">
+        <li>В 2011 году показали: POST-запрос с тысячами подобранных параметров занимает ядро на минуты в PHP, Java, Python, Ruby, ASP.NET. В Java <code>"Aa"</code> и <code>"BB"</code> имеют один хеш — из таких блоков собирается 2<sup>k</sup> коллизий.</li>
+        <li>Защиты: секретный случайный seed (Python 3.3+ — <code>PYTHONHASHSEED</code>, в Go — свой seed у каждой map), дерево вместо длинной цепочки (Java 8), лимит числа параметров запроса.</li>
+      </ul>
+      <p class="note">Выберите защиту и двигайте число ключей.</p>
+    </div>
+    <div class="demo" data-demo="flood"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Python dict изнутри</h2>
+      <p class="lead">С 3.6 словарь — два массива: маленький разреженный массив индексов и плотный массив записей (хеш, ключ, значение) в порядке вставки. Поэтому <code>dict</code> помнит порядок — с 3.7 это гарантия языка — и занимает меньше памяти.</p>
+      <ul class="points">
+        <li>Проба: <code>i = (5·i + 1 + perturb) mod m</code>, а <code>perturb &gt;&gt;= 5</code> — так в выбор ячейки входят все биты хеша.</li>
+        <li>Удаление оставляет дыру в записях и надгробие в индексах. Когда занято 2/3 индексов, словарь перестраивается в размер ≥ 3 × живых ключей — и заодно сжимает записи.</li>
+      </ul>
+      <p class="note">Добавляйте и удаляйте ключи. Хеши здесь условные: в настоящем Python хеш строки меняется от запуска к запуску.</p>
+    </div>
+    <div class="demo" data-demo="pydict"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как устроены map в Go, Java и JS</h2>
+    <div class="impl">
+      <div class="im"><b>Go map до 1.23</b><span>Массив из 2<sup>B</sup> корзин по 8 пар + 8 байт «tophash» (старшие биты хеша) для быстрого отсева. Переполнилась — цепляется overflow-корзина. Рост при 6,5 элемента на корзину, постепенный: старые корзины переносятся при следующих записях.</span></div>
+      <div class="im"><b>Go map 1.24+</b><span>Swiss tables: группы по 8 слотов + 8 контрольных байт с 7 битами хеша; одна операция сравнивает все 8 байт сразу. Открытая адресация по группам, заполнение до 7/8. Большая map — набор таблиц до 1024 слотов, каждая растёт отдельно.</span></div>
+      <div class="im"><b>Java HashMap</b><span>Массив корзин размера 2<sup>k</sup> и цепочки. Корзина из 8+ элементов при таблице ≥ 64 превращается в красно-чёрное дерево — O(log n) даже при атаке. Рост ×2 при 0,75: цепочка делится на «осталась» и «сдвинулась на oldCap» без пересчёта хеша.</span></div>
+      <div class="im"><b>JS Map / Set (V8)</b><span>Детерминированная хеш-таблица: цепочки индексов + записи в порядке вставки — та же идея, что compact dict. Объект с тысячами динамических ключей уходит в медленный «словарный режим» — для словарей берите <code>Map</code>.</span></div>
+    </div>
+    <p class="note">Общее у всех: порядок обхода — деталь реализации. Go специально начинает обход со случайной позиции, чтобы никто на порядок не полагался. Ни одна из этих map не потокобезопасна: <code>sync.Map</code>/мьютекс в Go, <code>ConcurrentHashMap</code> в Java.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Хешируемость и изменяемые ключи</h2>
+      <p class="lead">Контракт: равные объекты обязаны иметь равные хеши, а хеш не должен меняться, пока объект лежит в таблице. Нарушили — элемент «потерян»: он в таблице, но найти его нельзя.</p>
+      <ul class="points">
+        <li>Python: <code>list</code>, <code>dict</code>, <code>set</code> не хешируемы; <code>@dataclass(frozen=True)</code> — хешируем. Определили <code>__eq__</code> — <code>__hash__</code> сбрасывается в <code>None</code>.</li>
+        <li>Java: переопределили <code>equals</code> без <code>hashCode</code> — <code>HashSet</code> хранит «дубликаты»; поменяли поле ключа — <code>remove()</code> молча не работает.</li>
+        <li>Go: ключ — только comparable-тип. <code>NaN != NaN</code>, поэтому <code>m[math.NaN()] = 1</code> каждый раз добавляет новую запись.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="mutkey"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Что напечатает Python?</p>
+<pre class="code"><code class="lang-py">
+d = {1: "int", True: "bool", 1.0: "float"}
+print(d)
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt"><code>{1: 'int', True: 'bool', 1.0: 'float'}</code></button>
+      <button class="opt" data-correct><code>{1: 'float'}</code></button>
+      <button class="opt"><code>{1.0: 'float'}</code></button>
+      <button class="opt"><code>TypeError: duplicate key</code></button>
+      <div class="explain"><code>1 == True == 1.0</code> и <code>hash(1) == hash(True) == hash(1.0) == 1</code> — для таблицы это один ключ. Второе и третье присваивание находят существующую запись и меняют только значение, а ключом остаётся первый объект — <code>1</code>. На практике это ловят, когда смешивают в ключах <code>int</code> и <code>float</code> из JSON или <code>bool</code> и числа.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Множества</h2>
+      <ul class="points">
+        <li><code>set</code> — хеш-таблица без значений: <code>in</code>, <code>add</code>, <code>remove</code> — O(1) в среднем. А <code>x in list</code> — O(n), и проверка в цикле незаметно делает из O(n) O(n²).</li>
+        <li><code>a &amp; b</code> стоит O(min(|a|, |b|)): перебирается меньшее множество, каждый элемент ищется в большем.</li>
+        <li>Go: <code>map[T]struct{}</code> — пустая структура не занимает памяти. Java: <code>HashSet</code> — обёртка над <code>HashMap</code>, <code>LinkedHashSet</code> помнит порядок.</li>
+        <li>Миллиарды элементов и можно ошибаться в одну сторону — фильтр Блума (<a href="/probabilistic-structures/">вероятностные структуры</a>).</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+ids = set(user_ids)                 # O(n) один раз
+active = [o for o in orders if o.user_id in ids]
+# со списком: 10⁵ × 10⁵ / 2 сравнений — минуты,
+# с set — 10⁵ проверок, миллисекунды
+
+uniq = list(dict.fromkeys(xs))      # дедуп с порядком
+both, either, only_a = a &amp; b, a | b, a - b
+
+from collections import Counter
+Counter("mississippi").most_common(2)
+# [('i', 4), ('s', 4)]
+</code></pre>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>LRU-кэш = хеш-таблица + двусвязный список</h2>
+      <p class="lead">Надо за O(1) найти ключ, за O(1) поднять его в начало и при переполнении выкинуть самый давний. Таблица даёт поиск и указатель на узел, список — порядок: узел вынимается из середины за O(1), потому что искать его не нужно.</p>
+      <ul class="points">
+        <li><code>functools.lru_cache</code> — dict + кольцевой двусвязный список на C; руками — <code>OrderedDict.move_to_end</code>. Java: <code>LinkedHashMap(…, true)</code> + <code>removeEldestEntry</code>. Go: <code>container/list</code> + map.</li>
+        <li>Redis экономит память и списка не держит: берёт 5 случайных ключей и вытесняет самый давний — приближённый LRU.</li>
+      </ul>
+      <p class="note">Классическая задача собеседования (LeetCode 146). Обращайтесь к ключам: кэш на 4 элемента.</p>
+    </div>
+    <div class="demo" data-demo="lru"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Задачи на хеш-таблицу: как узнать</h2>
+      <ul class="points">
+        <li>«Найти пару / дополнение / встречалось ли раньше» → <code>dict</code> или <code>set</code> увиденного: Two Sum за O(n) вместо O(n²).</li>
+        <li>«Сгруппировать по признаку» → словарь списков с каноническим ключом: <code>"".join(sorted(w))</code>, кортеж частот.</li>
+        <li>«Частоты, топ-k, анаграмма ли» → <code>Counter</code>.</li>
+        <li>«Самая длинная подстрока / подмассив, где …» → окно <code>[l, r]</code> + счётчики или последние позиции в <code>dict</code>.</li>
+        <li>«Сумма подмассива = k», есть отрицательные → префиксные суммы + <code>dict</code> (следующий слайд).</li>
+      </ul>
+      <p class="note">Размен почти всегда один: O(n) памяти ради O(n) времени. Проговаривайте его вслух.</p>
+    </div>
+    <div class="demo" data-demo="patterns"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сумма подмассива равна k</h2>
+      <p class="lead">Сумма <code>nums[i..j]</code> = P<sub>j+1</sub> − P<sub>i</sub>, где P — префиксные суммы. На каждом шаге спрашиваем: сколько раз раньше встречался префикс <code>s − k</code>? Счётчик префиксов в <code>dict</code> отвечает за O(1) — итого O(n).</p>
+<pre class="code"><code class="lang-py">
+def subarray_sum(nums, k):
+    seen = Counter({0: 1})   # пустой префикс
+    s = count = 0
+    for x in nums:
+        s += x
+        count += seen[s - k]
+        seen[s] += 1
+    return count
+</code></pre>
+      <p class="note">Скользящее окно не годится: с отрицательными числами сумма окна не растёт монотонно. Префиксы — и в жизни: счётчик в Prometheus только растёт, а значение за интервал — разность двух точек.</p>
+    </div>
+    <div class="demo" data-demo="prefix"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В Go-сервисе кэш — обычная <code>map[string]*User</code>. HTTP-обработчики пишут в неё из разных горутин без мьютекса. Что будет под нагрузкой?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Ничего: map в Go потокобезопасна</button>
+      <button class="opt text">Иногда потеряются записи, но сервис будет работать</button>
+      <button class="opt text">Паника, которую можно перехватить <code>recover()</code> в middleware</button>
+      <button class="opt text" data-correct><code>fatal error: concurrent map writes</code> — процесс падает целиком, <code>recover</code> не поможет</button>
+      <div class="explain">Map в Go не защищена, и рантайм на лету ловит одновременную запись по флагу «идёт запись» — это не паника, а фатальная ошибка. Ловит не всегда: иногда таблица просто портится. Лечится <code>sync.Mutex</code>/<code>RWMutex</code> или <code>sync.Map</code>, а находится заранее <code>go test -race</code>. В Java старый <code>HashMap</code> при одновременном росте мог зациклить цепочку — поток вечно крутился на 100% CPU.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li>Рост списка: <code>sys.getsizeof</code> прыгает в момент перевыделения.</li>
+        <li>Рандомизация хеша: запустите <code>hash("abc")</code> дважды; алгоритм — в <code>sys.hash_info</code>.</li>
+        <li><code>list</code> против <code>set</code>: <code>python -m timeit</code>. Go: <code>go test -bench . -benchmem</code> покажет аллокации на рост map без ёмкости.</li>
+        <li>Гонки на map: <code>go test -race</code>; в Java — <code>ConcurrentHashMap</code> по умолчанию для общего состояния.</li>
+        <li>Ёмкость заранее: <code>make([]T, 0, n)</code>, <code>make(map[K]V, n)</code>, <code>new ArrayList&lt;&gt;(n)</code>, <code>HashMap.newHashMap(n)</code> (Java 19+).</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+>>> import sys
+>>> xs, sizes = [], []
+>>> for i in range(17):
+...     xs.append(i); sizes.append(sys.getsizeof(xs))
+>>> sorted(set(sizes))     # ёмкость 4 → 8 → 16 → 24
+[88, 120, 184, 248]
+
+$ python3 -c 'print(hash("abc"))'
+-4573226438459138812
+$ python3 -c 'print(hash("abc"))'
+7012385830413725190
+>>> sys.hash_info.algorithm
+'siphash13'
+
+$ python3 -m timeit -s 'x=[*range(10**6)]' '-1 in x'
+50 loops, best of 5: 6.1 msec per loop
+$ python3 -m timeit -s 'x={*range(10**6)}' '-1 in x'
+10000000 loops, best of 5: 21 nsec per loop
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Массив — O(1) по индексу и лучший друг кэша; вставка в середину и <code>pop(0)</code> — O(n). Динамический массив растёт в k раз, и <code>append</code> амортизированно O(1).</li>
+      <li>Связный список нужен, когда узел уже найден: LRU, free list, ядро. Для перебора и поиска он проигрывает массиву в разы.</li>
+      <li>Очередь и дек — кольцевой буфер, а не сдвиги массива.</li>
+      <li>Хеш-таблица — массив + хеш-функция + правило для коллизий. O(1) — в среднем и при запасе места; рост стоит O(n) разом.</li>
+      <li>Ключ должен быть неизменяемым, а равные ключи — иметь равные хеши. Хеш от чужих данных — с секретным seed.</li>
+      <li>На собеседовании «пара, группа, частота, окно, сумма подмассива» — почти всегда <code>dict</code>.</li>
+    </ul>
+    <p class="proverb">O(1) — это обещание в среднем, а не гарантия. Гарантию дают seed, запас места и неизменяемые ключи.</p>
+    <p class="controls"><a class="btn primary back-link" href="/">К списку презентаций</a><a class="btn back-link" href="/sorting-searching/">Дальше: сортировка и поиск →</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-hash.js"></script>
+<script src="demos-tasks.js"></script>
+</body>
+</html>

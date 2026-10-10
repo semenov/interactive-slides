@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Масштабирование: балансировка, кэши, CDN — интерактивная презентация</title>
+  <meta name="description" content="Вертикальное и горизонтальное масштабирование, stateless-сервисы, балансировщики и их алгоритмы, кэши и их проблемы, CDN, rate limiting, backpressure и автоскейлинг — с реальными цифрами.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <svg class="hero" viewBox="0 0 340 300" aria-hidden="true">
+      <g class="h-users">
+        <circle cx="60" cy="30" r="9"/><circle cx="100" cy="30" r="9"/><circle cx="140" cy="30" r="9"/><circle cx="200" cy="30" r="9"/><circle cx="240" cy="30" r="9"/><circle cx="280" cy="30" r="9"/>
+      </g>
+      <path class="h-wire" d="M60 40 170 92M100 40 170 92M140 40 170 92M200 40 170 92M240 40 170 92M280 40 170 92"/>
+      <rect class="h-cdn" x="20" y="54" width="70" height="26" rx="6"/><text class="h-t" x="55" y="71">CDN</text>
+      <rect class="h-lb" x="105" y="92" width="130" height="32" rx="8"/><text class="h-t w" x="170" y="113">балансировщик</text>
+      <path class="h-wire" d="M170 124 70 168M170 124 170 168M170 124 270 168"/>
+      <rect class="h-app" x="30" y="168" width="80" height="40" rx="8"/><rect class="h-app" x="130" y="168" width="80" height="40" rx="8"/><rect class="h-app" x="230" y="168" width="80" height="40" rx="8"/>
+      <rect class="h-bar" x="40" y="194" width="44" height="6" rx="3"/><rect class="h-bar" x="140" y="194" width="30" height="6" rx="3"/><rect class="h-bar" x="240" y="194" width="52" height="6" rx="3"/>
+      <text class="h-t" x="70" y="186">app</text><text class="h-t" x="170" y="186">app</text><text class="h-t" x="270" y="186">app</text>
+      <path class="h-wire" d="M70 208 110 246M170 208 110 246M270 208 110 246M70 208 240 246M170 208 240 246M270 208 240 246"/>
+      <rect class="h-cache" x="60" y="246" width="100" height="36" rx="8"/><text class="h-t" x="110" y="269">кэш</text>
+      <path class="h-db" d="M190 252c0-8 100-8 100 0v26c0 8-100 8-100 0z"/><path class="h-dbl" d="M190 252c0 8 100 8 100 0"/><text class="h-t" x="240" y="274">БД</text>
+    </svg>
+    <div class="stack">
+      <h1>Масштабирование</h1>
+      <p class="lead">Балансировка, кэши и CDN. Когда хватит одного большого сервера, куда девать состояние, как распределять запросы, сколько на самом деле даёт кэш и как защитить систему от собственного успеха.</p>
+      <p class="note">Серия «Системный дизайн», часть 2. Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Вертикально или горизонтально</h2>
+      <p class="lead">Вертикальное масштабирование — взять машину побольше. Сегодня это 192 ядра, терабайты RAM и NVMe на миллион IOPS. Ни строчки кода не меняется.</p>
+      <ul class="points">
+        <li>Горизонтальное — больше одинаковых машин. Нужны балансировщик, stateless-код, а для данных — репликация и шардирование.</li>
+        <li>Миллион DAU — это обычно сотни RPS, а не десятки тысяч. Сначала посчитайте.</li>
+        <li>Горизонтально масштабируют ради отказоустойчивости раньше, чем ради нагрузки: двух серверов хватает обоим требованиям.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="vscale"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Stateless: состояние — наружу</h2>
+      <p class="lead">Сервер приложения, который ничего не помнит между запросами, можно добавить, убить или перезапустить в любой момент. Значит, всё состояние должно жить где-то ещё.</p>
+      <ul class="points">
+        <li>Сессии — в Redis или в подписанном токене (JWT). Sticky sessions — костыль: падение сервера разлогинит всех его пользователей.</li>
+        <li>Загрузки — сразу в S3 по presigned URL, а не на локальный диск.</li>
+        <li>Локальный кэш — можно, но только как копия: с коротким TTL.</li>
+        <li>Фоновые задачи и cron — в очереди, а не в памяти одного экземпляра.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="stateless"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2 class="wide">Где балансировать: DNS, L4, L7</h2>
+    <p class="lead">Обычно уровни стоят цепочкой: DNS выбирает регион, L4 раздаёт TCP-соединения по L7-прокси, а те — HTTP-запросы по приложениям.</p>
+    <div class="lbl">
+      <div class="lbl-row"><b>DNS</b><div><p>Разные IP для разных клиентов: GeoDNS, Route 53, NS1. Грубо: клиенты и резолверы кэшируют ответ дольше TTL, о падении сервера DNS узнаёт с опозданием на минуты.</p><span class="label">выбор региона и дата-центра</span></div></div>
+      <div class="lbl-row"><b>L4</b><div><p>Видит только IP и порт, раздаёт TCP-соединения по хешу 5-tuple. Миллионы пакетов в секунду на сервер: LVS/IPVS, Maglev, AWS NLB. Одно долгое соединение HTTP/2 или gRPC целиком уходит на один бэкенд.</p><span class="label">дёшево и быстро, но слепо</span></div></div>
+      <div class="lbl-row"><b>L7</b><div><p>Терминирует TLS, читает HTTP: маршрутизирует по пути, заголовку, cookie, балансирует каждый запрос и каждый gRPC-стрим, делает повторы и таймауты. nginx, HAProxy, Envoy, AWS ALB — десятки тысяч RPS на ядро.</p><span class="label">умно, но дороже по CPU</span></div></div>
+      <div class="lbl-row"><b>клиент</b><div><p>Клиент сам знает список бэкендов и выбирает (gRPC, service mesh с sidecar). Нет лишнего хопа, но нужен discovery и одинаковая логика во всех клиентах.</p><span class="label">для внутренних сервисов</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Алгоритмы балансировки</h2>
+      <p class="lead">Пять серверов, один из них втрое медленнее — у него «шумный сосед» или GC. Round robin этого не замечает и отправляет ему ту же пятую часть запросов. Очередь растёт, и p99 улетает.</p>
+      <ul class="points">
+        <li><b>Least connections</b> смотрит на число запросов в работе — медленный сервер сам набирает очередь и получает меньше.</li>
+        <li><b>Power of two choices</b>: выбрать два случайных и взять менее загруженный. Почти так же хорошо, и не нужна глобальная картина.</li>
+      </ul>
+      <p class="note">Выберите алгоритм и поднимите нагрузку. Квадратики — запросы в очереди сервера.</p>
+    </div>
+    <div class="demo" data-demo="lbalgo"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Консистентное хеширование</h2>
+      <p class="lead">Иногда запросы одного ключа нужно отправлять на один и тот же сервер: там его локальный кэш, WebSocket или шард данных. Простое <code>hash(key) % N</code> при добавлении сервера перемешивает почти всё.</p>
+      <p class="note">На кольце каждый ключ принадлежит ближайшему серверу по часовой стрелке. Добавьте или уберите сервер: переедут только ключи соседнего участка, около 1/N. Виртуальные узлы выравнивают доли. В nginx это <code>hash $cookie_uid consistent</code>, в Envoy — <code>ring_hash</code> и <code>maglev</code>.</p>
+    </div>
+    <div class="demo" data-demo="ring"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Health checks и draining</h2>
+      <ul class="points">
+        <li><b>Активная проверка</b>: балансировщик раз в N секунд дёргает <code>/health</code> и после 2–3 неудач подряд исключает сервер. До этого момента часть запросов уходит в никуда.</li>
+        <li><b>Пассивная</b> (outlier detection): смотреть на ошибки живых запросов и исключать сервер после 5 подряд — реагирует за доли секунды.</li>
+        <li><b>Draining</b>: перед остановкой сервер перестаёт получать новые запросы и доделывает текущие. Без этого каждый деплой — всплеск 502.</li>
+      </ul>
+      <p class="note">Проверка готовности (readiness) должна проверять сам сервис, а не его зависимости: если <code>/health</code> ходит в базу, то при сбое базы балансировщик выключит все серверы сразу.</p>
+    </div>
+    <div class="demo" data-demo="health"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Перед сервисом стоят 40 экземпляров L7-балансировщика, у каждого свой счётчик соединений. Все они используют least connections. Сервер перезапустился и вернулся в пул пустым. Что произойдёт?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Он плавно наберёт свою долю нагрузки</button>
+      <button class="opt text" data-correct>Все 40 балансировщиков одновременно отправят ему почти весь новый трафик</button>
+      <button class="opt text">Балансировщики будут его избегать, пока не прогреется</button>
+      <button class="opt text">Ничего особенного: least connections всегда выравнивает нагрузку</button>
+      <div class="explain">Каждый балансировщик видит у нового сервера ноль соединений и независимо выбирает именно его — стадное поведение. Сервер с холодным кэшем и непрогретым JIT захлёбывается. Поэтому в распределённых балансировщиках берут power of two choices — случайность разводит их по разным серверам, — и включают slow start: вес нового сервера растёт постепенно.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>От одного сервера к сотням</h2>
+      <p class="lead">Архитектура растёт не по моде, а по узким местам. На каждом шаге что-то упирается в потолок, и вы добавляете ровно тот компонент, который его снимает.</p>
+      <p class="note">Нажимайте «Пользователей ×10». Красным — что сломается следующим, зелёным — что только что добавили. Оценка: 100 запросов на пользователя в день, пик втрое выше среднего, 3 запроса к БД на API-запрос.</p>
+    </div>
+    <div class="demo" data-demo="evolve"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Где кэшировать</h2>
+    <p class="lead">Чем ближе к пользователю, тем быстрее ответ и тем труднее инвалидация. Самый дешёвый запрос — тот, который до вас не дошёл.</p>
+    <div class="layers">
+      <div class="ly"><b>клиент</b><span class="ly-t">0 мс</span><p>Браузер и мобильное приложение: <code>Cache-Control</code>, <code>ETag</code>. Сбросить нельзя — только дождаться TTL или сменить URL (<code>app.3f9a.js</code>).</p></div>
+      <div class="ly"><b>CDN</b><span class="ly-t">5–30 мс</span><p>Точка присутствия рядом с пользователем вместо 100–200 мс до другого континента. Статика, медиа, иногда публичные API.</p></div>
+      <div class="ly"><b>reverse proxy</b><span class="ly-t">~1 мс</span><p>nginx <code>proxy_cache</code>, Varnish перед приложением: готовые HTTP-ответы целиком.</p></div>
+      <div class="ly"><b>в процессе</b><span class="ly-t">~100 нс</span><p>Словарь или LRU в памяти приложения. Самый быстрый, но у каждого из N экземпляров своя копия и своя степень устаревания.</p></div>
+      <div class="ly"><b>распределённый</b><span class="ly-t">0,2–1 мс</span><p>Redis или Memcached: один кэш на всех, ~100 тыс. операций в секунду на ядро. Подробнее о Redis — в <a href="/backend-stack/#6">презентации про бэкенд-стек</a>.</p></div>
+      <div class="ly"><b>база</b><span class="ly-t">буферы</span><p>Buffer pool и кэш ОС. Работает сам, но запрос всё равно проходит разбор, план и выполнение.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как кэш стоит рядом с базой</h2>
+    <div class="patterns">
+      <div class="pat main">
+        <h3>cache-aside</h3>
+        <p class="flow">чтение: кэш → промах → БД → <code>SET</code> в кэш<br>запись: БД → <code>DEL</code> ключа</p>
+        <p>Приложение само управляет кэшем. Стандарт по умолчанию: кэш упал — работаем медленнее, но работаем. Риск — гонки и устаревшие данные до TTL.</p>
+      </div>
+      <div class="pat">
+        <h3>read-through</h3>
+        <p class="flow">чтение: кэш сам идёт в БД при промахе</p>
+        <p>То же, но логика загрузки внутри кэша или библиотеки (Caffeine, DAX). Код чище, кэш становится обязательным звеном.</p>
+      </div>
+      <div class="pat">
+        <h3>write-through</h3>
+        <p class="flow">запись: кэш → БД синхронно</p>
+        <p>Кэш всегда свежий для того, что через него записали. Запись медленнее, и в кэш попадает много того, что никто не прочитает.</p>
+      </div>
+      <div class="pat">
+        <h3>write-behind</h3>
+        <p class="flow">запись: кэш → ответ → БД потом, пачками</p>
+        <p>Быстрая запись и сглаживание пиков. Но упал кэш до сброса — данные потеряны. Годится для счётчиков и метрик, не для денег.</p>
+      </div>
+    </div>
+    <p class="note">Ни один паттерн не даёт транзакции «база + кэш»: между записью в базу и операцией с кэшем всегда есть окно, когда они расходятся, а процесс может упасть посередине. Поэтому TTL ставят всегда — как страховку.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Математика hit ratio</h2>
+      <p class="lead">До базы доходит доля промахов: <code class="nw">RPS × (1 − hit)</code>. Поэтому 99% и 95% — это не «на 4% лучше», а впятеро меньше нагрузки на базу.</p>
+      <ul class="points">
+        <li>Средняя задержка: <code class="nw">hit × t<sub>кэш</sub></code> + <code class="nw">miss × (t<sub>кэш</sub> + t<sub>БД</sub>)</code>.</li>
+        <li>p99 определяется промахами, пока их больше 1%.</li>
+        <li>Если база выдерживает только трафик промахов, кэш стал несущей стеной. Холодный старт или падение кэша кладёт базу.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="hitratio"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>TTL, инвалидация, вытеснение</h2>
+      <ul class="points">
+        <li><b>TTL</b> — верхняя граница устаревания и страховка от ошибок инвалидации. Добавляйте случайный разброс ±10%, иначе ключи, записанные вместе, вместе и истекут.</li>
+        <li><b>Инвалидация по событию</b>: удалить ключ после записи в БД или по потоку изменений (CDC из WAL через Debezium). Либо версия в ключе: <code>user:42:v7</code>.</li>
+        <li><b>Вытеснение</b>, когда память кончилась: LRU выбрасывает давно не читанное, LFU — редко читанное и переживает разовый скан. В Redis — <code>maxmemory-policy allkeys-lru</code> или <code>allkeys-lfu</code>. С <code>noeviction</code> запись в полный кэш падает с ошибкой.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <h2 class="h3">Горячие ключи</h2>
+      <ul class="points">
+        <li>Ключ на 200 тыс. чтений в секунду живёт на одном шарде Redis, а одно ядро тянет около 100 тыс. Кластер из 50 узлов не поможет.</li>
+        <li>Лечат локальным кэшем на 1–5 секунд перед Redis, копиями ключа <code>feed:top#1..8</code> со случайным выбором при чтении и чтением с реплик.</li>
+        <li>Найти: <code>redis-cli --hotkeys</code> (при политике LFU), метрики по ключам в клиенте.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Cache stampede</h2>
+      <p class="lead">Популярный ключ истёк. Пока первый запрос пересчитывает его 300 мс, ещё сотни запросов тоже видят промах и идут в базу с тем же самым запросом. База тормозит, пересчёт идёт дольше, промахов ещё больше.</p>
+      <ul class="points">
+        <li><b>Блокировка</b>: <code>SET lock NX PX 5000</code> — пересчитывает один, остальные ждут или получают старое значение.</li>
+        <li><b>Склейка запросов</b> (single flight) внутри процесса: один запрос в БД на экземпляр приложения.</li>
+        <li><b>Раннее вероятностное обновление</b>: незадолго до TTL кто-то один обновит ключ заранее, и промаха не будет вовсе.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="stampede"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис при изменении профиля делает <code>UPDATE</code> в базе, а затем <code>SET user:42</code> с новым значением в Redis. TTL — сутки. Иногда пользователи видят старое имя весь день. Почему?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Redis теряет записи при вытеснении</button>
+      <button class="opt text">Реплика базы отстаёт</button>
+      <button class="opt text" data-correct>Два параллельных обновления записали кэш в обратном порядке</button>
+      <button class="opt text">Слишком длинный TTL сам по себе</button>
+      <div class="explain">Запрос A обновил базу первым, запрос B — вторым, но <code>SET</code> от B дошёл до Redis раньше, чем от A. В базе новое значение, в кэше — старое, и так до истечения TTL. Удаление ключа вместо записи (<code>DEL</code>) убирает эту гонку почти полностью; короткий TTL ограничивает ущерб от оставшихся.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>CDN</h2>
+      <ul class="points">
+        <li>Сотни точек присутствия кэшируют ответы рядом с пользователем. Каждая кэширует отдельно — и каждая ходит за промахами к вам.</li>
+        <li><b>Origin shield</b> — промежуточный уровень: все точки спрашивают его, и до origin доходит один запрос на объект.</li>
+        <li><b>Ключ кэша</b> — URL плюс то, что вы в него добавили. Cookie или utm-метки в ключе превращают один объект в тысячи.</li>
+        <li><b>Purge</b> занимает секунды, но для статики проще версионировать имена файлов и ставить TTL на год.</li>
+        <li>Динамику CDN ускоряет иначе: TLS рядом с пользователем и прогретые соединения до origin.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="cdn"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Rate limiting</h2>
+      <ul class="points">
+        <li><b>Fixed window</b> — счётчик на минуту: <code>INCR</code> + <code>EXPIRE</code>. Просто, но на стыке окон проходит двойной лимит.</li>
+        <li><b>Sliding window</b> — считает последние 60 секунд: точный журнал меток времени или взвешенная сумма двух окон.</li>
+        <li><b>Token bucket</b> — токены капают с постоянной скоростью до ёмкости корзины. Разрешает всплески, но держит среднюю скорость.</li>
+      </ul>
+      <p class="note">Где: на входе (API gateway, nginx <code>limit_req</code>) — по ключу API или IP, и перед дорогими зависимостями. Распределённый лимит — счётчики в Redis. Отказ — <code>429</code> с <code>Retry-After</code>.</p>
+    </div>
+    <div class="demo" data-demo="ratelimit"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Backpressure и сброс нагрузки</h2>
+      <p class="lead">Когда запросов больше, чем сервер может обработать, очередь растёт. Как только ожидание превысило таймаут клиента, сервер работает впустую: отвечает тем, кто уже ушёл. Полезная пропускная способность падает до нуля.</p>
+      <ul class="points">
+        <li>Ограниченная очередь и быстрый <code>503</code> лучше бесконечной очереди.</li>
+        <li>Отбрасывайте запросы, чей дедлайн уже истёк, и передавайте дедлайн дальше по цепочке.</li>
+        <li>Повторы — с экспоненциальной задержкой, джиттером и бюджетом, иначе клиенты сами добьют сервис.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="shed"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Автоскейлинг и его задержка</h2>
+      <p class="lead">Автоскейлер видит нагрузку с опозданием, решает раз в 15–60 секунд, а новая машина поднимается минуты: загрузить образ, стартовать, прогреть кэши и JIT. Плавный рост он догоняет, резкий всплеск — нет.</p>
+      <ul class="points">
+        <li>Держите запас: цель загрузки 50–70%, а не 90%.</li>
+        <li>Предсказуемые пики — расписанием, заранее.</li>
+        <li>От внезапных всплесков спасает не автоскейлинг, а сброс нагрузки и очереди.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="autoscale"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Лимит — 100 запросов в минуту на ключ API, алгоритм fixed window. Сколько запросов клиент может успешно сделать за 2 секунды?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 3: 100 в минуту — это меньше двух в секунду</button>
+      <button class="opt text">100</button>
+      <button class="opt text" data-correct>200</button>
+      <button class="opt text">Сколько угодно: лимит считается раз в минуту</button>
+      <div class="explain">100 запросов в последнюю секунду одного окна и ещё 100 в первую секунду следующего: счётчик обнулился на границе. Если бэкенду важна мгновенная скорость, берут token bucket с маленькой ёмкостью или sliding window — и ограничивают сразу на двух масштабах: в секунду и в минуту.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>На практике и на интервью</h2>
+      <ul class="points">
+        <li>Сначала оценка: RPS в пике, доля записи, объём данных. Числа решают, нужен ли вообще кэш или шардирование.</li>
+        <li>Смотрите на p99 и насыщение (длину очередей), а не на среднее и CPU.</li>
+        <li>Для каждого компонента скажите, что будет при его отказе: кэш упал, балансировщик потерял сервер, CDN промахнулся.</li>
+        <li>Нагрузочный тест — до запуска, на реальной форме трафика, с ростом до отказа.</li>
+      </ul>
+    </div>
+    <pre class="code"><code class="lang-plain">
+# какой кэш ответил и сколько он уже держит ответ
+curl -sI https://example.com/app.js | grep -iE 'cache-control|age|x-cache'
+
+# нагрузка с распределением задержек
+wrk -t4 -c200 -d30s --latency http://localhost:8080/api
+k6 run --vus 200 --duration 1m load.js
+
+# Redis: попадания, промахи, горячие ключи
+redis-cli INFO stats | grep keyspace_
+redis-cli --hotkeys
+redis-cli --latency
+
+# nginx: статус кэша и время ответа апстрима
+log_format c '$uri $upstream_cache_status $upstream_response_time';
+</code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Посчитайте нагрузку. Один сервер тянет больше, чем кажется; второй нужен ради отказоустойчивости.</li>
+      <li>Stateless-приложение, состояние — в базе, Redis и S3. Тогда горизонтальное масштабирование — это просто число экземпляров.</li>
+      <li>Балансируйте по нагрузке, а не по кругу: least connections или power of two choices. Health checks, outlier detection и draining обязательны.</li>
+      <li>Кэш делит нагрузку на базу на долю промахов. Планируйте его падение, stampede и горячие ключи.</li>
+      <li>CDN — с origin shield и чистым ключом кэша.</li>
+      <li>Перегрузку встречайте лимитами, ограниченными очередями и быстрыми отказами: автоскейлинг всегда опаздывает.</li>
+    </ul>
+    <p class="proverb">Узкое место всегда есть. Вопрос только в том, знаете ли вы, где оно.</p>
+    <p class="note">Дальше в серии — <a href="/sd-data/">данные</a>: репликация, шардирование и выбор хранилища.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-load.js"></script>
+</body>
+</html>

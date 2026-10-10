@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Как устроена современная ОС — интерактивная презентация</title>
+  <meta name="description" content="Карта операционной системы: слои от железа до приложений, архитектуры ядер, загрузка, прерывания и драйверы, время, права и песочницы, eBPF, различия Linux, macOS и Windows.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-os" aria-hidden="true">
+      <div class="ho-row ho-app"><span>python</span><span>node</span><span>java</span><span>postgres</span></div>
+      <div class="ho-row ho-svc"><span>systemd</span><span>sshd</span><span>dockerd</span></div>
+      <div class="ho-row ho-lib"><span>libc · ld.so · libssl</span></div>
+      <div class="ho-gate"><i></i><b>syscall</b><i></i></div>
+      <div class="ho-kern">
+        <span>планировщик</span><span>память</span><span>VFS</span><span>сеть</span><span>драйверы</span><span>безопасность</span>
+      </div>
+      <div class="ho-row ho-fw"><span>UEFI · ACPI · микрокод</span></div>
+      <div class="ho-row ho-hw"><span>CPU</span><span>RAM</span><span>NVMe</span><span>NIC</span><em></em></div>
+    </div>
+    <div class="stack">
+      <h1>Как устроена современная ОС</h1>
+      <p class="lead">Карта операционной системы: слои от железа до вашей программы, ядро и его устройство, загрузка, прерывания, драйверы, время, права и песочницы — и чем Linux, macOS и Windows отличаются для разработчика.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Три работы операционной системы</h2>
+      <ul class="points">
+        <li><b>Абстракция.</b> Вместо регистров NVMe-контроллера — файл, вместо сетевой карты — сокет, вместо ядер процессора — поток.</li>
+        <li><b>Мультиплексирование.</b> Одно железо делится между сотнями процессов: процессор — по времени, память — по пространству, диск и сеть — очередями.</li>
+        <li><b>Изоляция и защита.</b> Ошибка или злой умысел одной программы не должны задеть остальные и само ядро.</li>
+      </ul>
+      <p class="note">Выберите ресурс — увидите все три работы и что будет, если программа поведёт себя плохо.</p>
+    </div>
+    <div class="demo" data-demo="jobs"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Слои: от железа до приложения</h2>
+      <p class="lead">Каждый слой прячет сложность нижнего и даёт верхнему стабильный интерфейс. Самый важный рубеж — между ядром и всем остальным: ниже него код работает с полными правами.</p>
+      <ul class="points">
+        <li>Linux обещает стабильность системных вызовов: «we don't break userspace». Поэтому Go собирает статические бинарники, которые сами делают <code>syscall</code>.</li>
+        <li>macOS и Windows стабильность обещают только для библиотек: <code>libSystem</code> и Win32. Номера вызовов меняются между версиями, и Go там ходит в ядро через системные DLL и dylib.</li>
+      </ul>
+      <p class="note">Нажмите на слой и переключите ОС.</p>
+    </div>
+    <div class="demo" data-demo="layers"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Архитектуры ядра</h2>
+      <ul class="points">
+        <li><b>Монолитное</b> (Linux, FreeBSD): файловые системы, сеть и драйверы — внутри ядра, общаются вызовами функций. Быстро, но ошибка в любом драйвере роняет всю систему.</li>
+        <li><b>Микроядро</b> (seL4, QNX, MINIX 3): в ядре только адресные пространства, планирование и обмен сообщениями. Остальное — процессы, которые можно перезапустить. seL4 — около 10 тыс. строк с формальным доказательством корректности.</li>
+        <li><b>Гибридное</b> (XNU в macOS, NT в Windows): задумано с оглядкой на микроядро, но ради скорости почти всё работает в режиме ядра.</li>
+      </ul>
+      <p class="note">Выберите архитектуру и нажмите действие.</p>
+    </div>
+    <div class="demo" data-demo="kernarch"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что происходит при загрузке</h2>
+      <p class="lead">От кнопки питания до приглашения входа — цепочка программ, каждая из которых загружает следующую и уступает ей место. Ядро стартует где-то в середине.</p>
+      <ul class="points">
+        <li>Время по этапам покажет <code>systemd-analyze</code>, самые медленные сервисы — <code>systemd-analyze blame</code>, а то, что реально задержало загрузку, — <code>systemd-analyze critical-chain</code>.</li>
+        <li>Сообщения ядра с момента старта — <code>dmesg</code> или <code>journalctl -k -b</code>.</li>
+      </ul>
+      <p class="note">Выберите машину и идите по шагам.</p>
+    </div>
+    <div class="demo" data-demo="boot"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Юнит сервиса содержит <code>After=network.target</code>. После перезагрузки сервера сервис падает: «не удалось разрешить имя db.internal». Ручной <code>systemctl restart</code> помогает. В чём дело?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">DNS-кэш systemd-resolved ещё пуст, надо его прогреть</button>
+      <button class="opt text" data-correct><code>network.target</code> не значит «сеть поднята»: нужен <code>network-online.target</code></button>
+      <button class="opt text">Сервис стартует раньше <code>network.target</code>, директива <code>After</code> не работает</button>
+      <button class="opt text">Не хватает <code>Restart=always</code>, systemd не перезапускает упавшие сервисы</button>
+      <div class="explain"><code>network.target</code> означает лишь, что запущены службы управления сетью; адреса и маршруты ещё могут не быть настроены. Ждать сеть — <code>Wants=network-online.target</code> вместе с <code>After=network-online.target</code>. Но надёжнее, чтобы сервис сам повторял подключение: сеть и база могут пропасть и после загрузки.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Прерывания и исключения</h2>
+      <ul class="points">
+        <li><b>Прерывание</b> — асинхронный сигнал от устройства: пакет пришёл, диск дочитал, таймер сработал. Процессор бросает текущий код, где бы тот ни был, и прыгает в обработчик ядра.</li>
+        <li><b>Исключение</b> — синхронная реакция на инструкцию: ошибка страницы, деление на ноль, системный вызов.</li>
+        <li>Обработчик делится на две половины: верхняя — микросекунды с запрещёнными прерываниями, только подтвердить и запланировать; нижняя (softirq, workqueue) — вся остальная работа.</li>
+      </ul>
+      <p class="note">Выберите событие и пройдите путь по шагам.</p>
+    </div>
+    <div class="demo" data-demo="irq"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Когда прерываний слишком много</h2>
+      <p class="lead">На каждое прерывание — вход в ядро, сохранение регистров, промах по кэшам. При миллионе пакетов в секунду ядро только и делало бы, что обрабатывало прерывания, а до приложения очередь не доходила бы. Это <i>livelock</i>.</p>
+      <ul class="points">
+        <li>NAPI: под нагрузкой драйвер выключает прерывания и опрашивает очередь пачками по 64 пакета.</li>
+        <li>RSS: у карты несколько очередей, каждая со своим прерыванием на своё ядро.</li>
+        <li>В <code>top</code> это столбцы <code>hi</code> и <code>si</code>, по ядрам — <code>mpstat -P ALL 1</code>, счётчики — <code>/proc/interrupts</code> и <code>/proc/softirqs</code>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="napi"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Драйверы и «всё — файл»</h2>
+      <p class="lead">Драйвер — код ядра, который знает регистры конкретного устройства. Наружу он отдаёт общий интерфейс: <code>open</code>, <code>read</code>, <code>write</code>, <code>ioctl</code>, <code>mmap</code>. Поэтому <code>cat</code> умеет читать и диск, и терминал, и счётчики ядра.</p>
+      <ul class="points">
+        <li>Большие объёмы устройства пишут в память сами, через DMA: процессор только готовит буферы и получает прерывание по готовности.</li>
+        <li>Узлы в <code>/dev</code> создаёт <code>udev</code>, когда ядро находит устройство. Буква <code>c</code> или <code>b</code> в <code>ls -l</code> — символьное или блочное, пара чисел — номер драйвера и экземпляра.</li>
+      </ul>
+      <p class="note">Выберите файл.</p>
+    </div>
+    <div class="demo" data-demo="devfiles"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Граница — системный вызов</h2>
+      <p class="lead">Всё, что программа хочет от ядра, проходит через одну дверь: номер вызова в регистр, аргументы в регистры, инструкция <code>syscall</code> (<code>svc</code> на ARM). Ядро проверяет аргументы и права, делает работу, возвращает число или код ошибки.</p>
+      <ul class="points">
+        <li>Ваш язык почти никогда не делает это сам: <code>open()</code> в Python, <code>fs.open</code> в Node, <code>FileInputStream</code> в Java вызывают libc, а та — ядро.</li>
+        <li>Цена вызова, <code>strace</code>, режимы процессора, процессы и сигналы — в презентации <a href="/processes-threads/">про процессы и потоки</a>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+# Python: open("data.txt")
+#   → CPython: _io.FileIO → open() из libc
+#   → glibc: mov $257, %eax      # номер openat
+#            syscall              # кольцо 3 → кольцо 0
+#   → ядро:  do_sys_openat2 → VFS → ext4
+#   ← rax = 3 (fd) или -ENOENT → errno
+
+$ strace -e trace=openat python3 -c 'open("data.txt")'
+openat(AT_FDCWD, "data.txt", O_RDONLY|O_CLOEXEC) = 3
+
+# Сколько дверей: Linux x86-64 — около 370 вызовов,
+# macOS — ~550 BSD-вызовов плюс Mach-ловушки,
+# Windows — ~480 в ntoskrnl и ~1200 в win32k,
+# и номера меняются от сборки к сборке
+</code></pre>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Время: часы и таймеры</h2>
+      <ul class="points">
+        <li><b>Настенные часы</b> (<code>CLOCK_REALTIME</code>) — секунды с 1970 года. Их переставляет NTP, администратор, гипервизор после паузы ВМ. Длительности ими мерить нельзя.</li>
+        <li><b>Монотонные</b> (<code>CLOCK_MONOTONIC</code>) только растут, на сне ноутбука стоят. <code>CLOCK_BOOTTIME</code> учитывает и сон.</li>
+        <li>Таймер ядра тикает 100–1000 раз в секунду, но простаивающее ядро процессора тики пропускает (tickless) и спит до ближайшего таймера. Чтение часов через vDSO — 20 нс без входа в ядро.</li>
+      </ul>
+      <p class="note">Запустите замер и устройте часам неприятность.</p>
+    </div>
+    <div class="demo" data-demo="clocks"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис на Python пишет в метрики <code>time.time() - start</code>. Ночью на графике появилась задержка запроса −1,8 секунды. Что произошло?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Переход на летнее время</button>
+      <button class="opt text">Високосная секунда</button>
+      <button class="opt text" data-correct>NTP переставил настенные часы назад</button>
+      <button class="opt text">Переполнение float в <code>time.time()</code></button>
+      <div class="explain"><code>time.time()</code> считает секунды в UTC, часовые пояса и летнее время на неё не влияют. А вот шаг NTP после рассинхронизации — например, когда виртуальную машину сняли с паузы — двигает часы на секунды назад или вперёд. Длительности мерьте монотонными часами: <code>time.monotonic()</code> или <code>perf_counter()</code> в Python, <code>performance.now()</code> в JS, <code>System.nanoTime()</code> в Java. В Go <code>time.Now()</code> несёт монотонное показание, и <code>time.Since</code> безопасен.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Пользователи, группы, права</h2>
+      <p class="lead">У процесса есть uid и список групп, у файла — владелец, группа и 12 бит режима. Ядро выбирает <b>одну</b> тройку бит — владельца, группы или остальных — и проверяет только её.</p>
+      <ul class="points">
+        <li>setuid на исполняемом файле: процесс получает права владельца файла. Так <code>passwd</code> пишет в <code>/etc/shadow</code>.</li>
+        <li>root проходит проверку чтения и записи всегда, а выполнения — если стоит хоть один бит <code>x</code>.</li>
+      </ul>
+      <p class="note">Кликайте по битам режима, выбирайте пользователя и действие.</p>
+    </div>
+    <div class="demo" data-demo="perms"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>root, capabilities и песочницы</h2>
+      <ul class="points">
+        <li>Всемогущество root в Linux разрезано на ~40 capabilities: <code>CAP_NET_BIND_SERVICE</code> — порты ниже 1024, <code>CAP_SYS_TIME</code> — менять часы, <code>CAP_SYS_ADMIN</code> — почти всё остальное.</li>
+        <li><b>seccomp</b> — фильтр системных вызовов, срабатывает раньше всех проверок. <b>SELinux</b> и <b>AppArmor</b> — правила поверх прав: какой программе какие файлы можно. В macOS — Seatbelt-песочница и TCC (запросы «разрешить доступ к папке»).</li>
+        <li>root в Docker — тот же uid 0, но с 14 capabilities, seccomp-профилем и AppArmor.</li>
+      </ul>
+      <p class="note">Выберите, кто запускает процесс, и действие.</p>
+    </div>
+    <div class="demo" data-demo="caps"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В вашем домашнем каталоге лежит файл <code>-r--r--r-- root root report.txt</code>. Вы не root. Получится ли <code>rm report.txt</code>?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Нет: у вас нет права записи в файл</button>
+      <button class="opt text">Нет: файл принадлежит root</button>
+      <button class="opt text" data-correct>Да: удаление — запись в каталог, а каталог ваш</button>
+      <button class="opt text">Только с <code>rm -f</code>, он игнорирует права</button>
+      <div class="explain">Имя файла — это запись в каталоге, и удаление меняет каталог, а не файл. Нужны права <code>w</code> и <code>x</code> на каталог. <code>rm</code> лишь спросит подтверждение, <code>-f</code> убирает вопрос, а не проверку. Исключение — sticky bit (<code>t</code>) на каталоге, как у <code>/tmp</code>: там удалить чужой файл может только его владелец.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как заглянуть в ядро: /proc, /sys, eBPF</h2>
+      <ul class="points">
+        <li><code>/proc</code> и <code>/sys</code> — файловые системы без диска: файлы генерирует ядро при чтении. <code>dmesg</code> — кольцевой журнал ядра: OOM killer, ошибки дисков, сегфолты.</li>
+        <li><b>eBPF</b> — маленькие программы, которые ядро загружает к себе, проверив верификатором, и вызывает на событиях: системный вызов, функция ядра, функция в вашем бинарнике.</li>
+        <li><code>strace</code> останавливает процесс на каждом вызове и замедляет его в разы. eBPF считает прямо в ядре: ~100 нс на событие, можно на проде.</li>
+      </ul>
+      <p class="note">Выберите вопрос и запустите однострочник <code>bpftrace</code>.</p>
+    </div>
+    <div class="demo" data-demo="ebpf"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Linux, macOS, Windows: что важно разработчику</h2>
+      <p class="lead">Рантаймы прячут различия, но не все. Код, который работает на ноутбуке, падает в CI или у коллеги на Windows как раз в этих местах.</p>
+      <p class="note">Выберите тему.</p>
+    </div>
+    <div class="demo" data-demo="osdiff"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В проекте на Node есть файл <code>config.js</code>, а в коде — <code>require('./Config')</code>. На Mac всё работает, в CI на Linux — <code>Cannot find module './Config'</code>. Почему?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Разные версии Node: старые не различают регистр</button>
+      <button class="opt text" data-correct>APFS по умолчанию не различает регистр имён, а ext4 различает</button>
+      <button class="opt text">git на Linux переименовал файл при checkout</button>
+      <button class="opt text">Кэш модулей в CI устарел</button>
+      <div class="explain">macOS и Windows по умолчанию хранят регистр имени, но при поиске его не учитывают: <code>Config.js</code> находит <code>config.js</code>. Linux ищет точное совпадение. Отсюда же проблемы git с файлами, отличающимися только регистром. Ловите это заранее: линтер (<code>import/no-unresolved</code> с проверкой регистра), CaseSensitivePathsPlugin в webpack, сборка в Linux-контейнере.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как посмотреть у себя</h2>
+      <ul class="points">
+        <li><code>uname -a</code>, <code>lsmod</code>, <code>modinfo</code> — какое ядро и какие модули загружены.</li>
+        <li><code>systemd-analyze</code>, <code>journalctl -b</code>, <code>dmesg -T</code> — загрузка и журнал ядра.</li>
+        <li><code>/proc/interrupts</code>, <code>mpstat</code> — кто и на каком ядре прерывает.</li>
+        <li><code>id</code>, <code>getpcaps</code>, <code>grep Cap /proc/PID/status</code> — права и capabilities процесса.</li>
+        <li><code>bpftrace</code> и утилиты <code>bcc</code>: <code>execsnoop</code>, <code>opensnoop</code>, <code>biolatency</code>.</li>
+        <li>macOS: <code>sysctl</code>, <code>log show</code>, <code>dtruss</code>. Windows: Process Monitor и Process Explorer.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+uname -r; lsmod | head
+systemd-analyze blame | head
+systemd-analyze critical-chain myapp.service
+journalctl -k -b -p warning
+
+watch -n1 'grep -E "CPU|eth0|nvme" /proc/interrupts'
+mpstat -P ALL 1          # %irq %soft по ядрам
+
+ls -l /dev/null /dev/nvme0n1
+cat /sys/class/net/eth0/mtu
+
+id; stat -c '%A %U:%G %n' file
+capsh --decode=$(awk '/CapEff/{print $2}' /proc/self/status)
+grep Seccomp /proc/PID/status   # 2 = фильтр
+
+execsnoop-bpfcc          # кто что запускает
+bpftrace -e 'tracepoint:syscalls:sys_enter_openat
+  { printf("%s %s\n", comm, str(args.filename)); }'
+</code></pre>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Карта дальше</h2>
+    <p class="lead">Эта презентация — обзор. Каждая подсистема ядра разобрана подробно в своей.</p>
+    <div class="next-map">
+      <a href="/virtual-memory/"><b>Память</b><span>Виртуальная память: таблицы страниц, TLB, page fault, OOM, copy-on-write</span></a>
+      <a href="/processes-threads/"><b>Процессы и планировщик</b><span>Системные вызовы, fork и exec, сигналы, планировщик, потоки, cgroups</span></a>
+      <a href="/concurrency-sync/"><b>Синхронизация</b><span>Гонки, мьютексы, атомарные операции, futex, модели памяти</span></a>
+      <a href="/async-io/"><b>Ввод-вывод</b><span>Блокирующий и асинхронный I/O, epoll, kqueue, IOCP, io_uring, event loop</span></a>
+      <a href="/networking/"><b>Сеть</b><span>Сокеты, TCP изнутри, буферы, задержки, DNS, TLS</span></a>
+      <a href="/files-storage/"><b>Файлы и диски</b><span>Дескрипторы, inode, page cache, fsync, SSD и надёжная запись</span></a>
+      <a href="/containers-virtualization/"><b>Контейнеры и виртуализация</b><span>Namespaces, cgroups, образы, гипервизоры — следующая в серии</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>ОС делает три вещи: прячет железо за абстракциями, делит его между программами и защищает их друг от друга.</li>
+      <li>Ядро — единственный код с полными правами. Linux монолитный с модулями, macOS и Windows — гибриды. Стабильный интерфейс в Linux — системные вызовы, в macOS и Windows — системные библиотеки.</li>
+      <li>Ядро работает по событиям: системные вызовы, исключения и прерывания. Таймер делает многозадачность вытесняющей, NAPI спасает от шторма прерываний.</li>
+      <li>Длительности — монотонными часами, никогда настенными.</li>
+      <li>Права — одна тройка бит, root разрезан на capabilities, контейнер — это uid плюс seccomp и LSM.</li>
+      <li>Смотреть в ядро можно на проде: <code>/proc</code>, <code>/sys</code>, <code>dmesg</code> и eBPF.</li>
+    </ul>
+    <p class="proverb">Ядро — это не программа, которая работает. Это программа, которая отвечает на события.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-sec.js"></script>
+</body>
+</html>

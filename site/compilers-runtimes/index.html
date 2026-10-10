@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>От исходника до машинного кода — интерактивная презентация</title>
+  <meta name="description" content="Компиляторы, интерпретаторы, виртуальные машины и JIT: лексер и парсер, оптимизации, байткод CPython, скрытые классы V8, деоптимизация, линковка и ELF.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-pipe" aria-hidden="true">
+      <div class="hpp-row"><span class="hpp-tag">исходник</span><code class="hpp-src">a * (b + 2)</code></div>
+      <div class="hpp-row"><span class="hpp-tag">токены</span><span class="hpp-toks"><i>a</i><i class="op">*</i><i class="p">(</i><i>b</i><i class="op">+</i><i class="n">2</i><i class="p">)</i></span></div>
+      <div class="hpp-row"><span class="hpp-tag">AST</span>
+        <svg class="hpp-tree" viewBox="0 0 160 74">
+          <path d="M80 12 L40 40 M80 12 L120 40 M120 40 L100 64 M120 40 L140 64"/>
+          <circle cx="80" cy="12" r="10"/><text x="80" y="16">*</text>
+          <circle cx="40" cy="40" r="10" class="leaf"/><text x="40" y="44">a</text>
+          <circle cx="120" cy="40" r="10"/><text x="120" y="44">+</text>
+          <circle cx="100" cy="64" r="9" class="leaf"/><text x="100" y="68">b</text>
+          <circle cx="140" cy="64" r="9" class="leaf"/><text x="140" y="68">2</text>
+        </svg>
+      </div>
+      <div class="hpp-row"><span class="hpp-tag">машинный код</span><span class="hpp-asm">add w8, w1, #2<br>mul w0, w0, w8<br>ret</span></div>
+    </div>
+    <div class="stack">
+      <h1>От исходника до машинного кода</h1>
+      <p class="lead">Что делают компилятор, интерпретатор и JIT с вашим кодом. Почему CPython медленный, как V8 и JVM разгоняют горячие функции и почему иногда всё откатывают назад. Что лежит в исполняемом файле и кто его запускает.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки, вводите выражения и переключайте флажки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Конвейер компилятора</h2>
+      <p class="lead">Любой язык проходит одни и те же этапы: текст → токены → дерево → промежуточное представление → оптимизации → машинный код. Языки отличаются тем, <b>когда</b> это происходит: при сборке, при запуске или никогда.</p>
+      <p class="note">Выберите язык — увидите, какие этапы делаются заранее, а какие во время работы программы. Нажмите на этап, чтобы узнать подробности.</p>
+    </div>
+    <div class="demo" data-demo="pipeline"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Лексер, парсер, генератор кода</h2>
+      <ul class="points">
+        <li><b>Лексер</b> режет текст на токены: имена, числа, операторы. Пробелы и комментарии исчезают.</li>
+        <li><b>Парсер</b> строит дерево по грамматике. Приоритет операторов и скобки — это форма дерева: умножение оказывается глубже сложения.</li>
+        <li><b>Генератор</b> обходит дерево снизу вверх. Для стековой машины — «положи операнды, выполни операцию», для процессора — команды над регистрами.</li>
+      </ul>
+      <p class="note">Введите своё выражение: <code>+ - * /</code>, скобки, числа и имена. Переменные считаем аргументами функции — они приходят в регистрах <code>w0</code>, <code>w1</code>…</p>
+    </div>
+    <div class="demo" data-demo="compile"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>IR, SSA и что получилось в итоге</h2>
+      <ul class="points">
+        <li>Оптимизируют не дерево и не машинный код, а промежуточное представление (IR). У Go — своё SSA, у Clang и Rust — LLVM IR, у JVM и V8 — граф Sea of Nodes или его наследники.</li>
+        <li>SSA: каждая переменная присваивается ровно один раз, <code>i = i + 1</code> превращается в <code>i2 = i1 + 1</code>. Так сразу видно, откуда пришло значение, и оптимизации становятся простыми.</li>
+        <li>Затем выбор инструкций (умножение на 4096 → сдвиг, <code>a + b*2</code> → одна <code>LEAQ</code>) и распределение регистров.</li>
+      </ul>
+      <p class="note">Справа — настоящий вывод <code>go build -gcflags=-S</code> для amd64. Функция <code>area</code> встроена, проверка границ массива осталась. Посмотреть SSA по каждому проходу: <code>GOSSAFUNC=f go build</code> → <code>ssa.html</code>.</p>
+    </div>
+    <div class="stack">
+<pre class="code"><code>
+func area(w, h int) int { return w * h }
+
+func f(xs []int, n int) int {
+    sum := 0
+    for i := 0; i &lt; n; i++ {
+        sum += xs[i]*4096 + area(n, 2)
+    }
+    return sum
+}
+</code></pre>
+<pre class="code"><code class="lang-plain">
+loop:
+  MOVQ  (AX)(CX*8), SI   // xs[i]
+  SHLQ  $12, SI          // * 4096 → сдвиг
+  LEAQ  (SI)(DI*2), SI   // + n*2: area встроена
+  ADDQ  SI, DX           // sum +=
+  INCQ  CX               // i++
+  CMPQ  DI, CX           // i &lt; n ?
+  JLE   done
+  CMPQ  BX, CX           // bounds check
+  JHI   loop
+  JMP   panicBounds
+</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Оптимизации</h2>
+      <ul class="points">
+        <li><b>Свёртка констант</b>: <code>4 * 1024</code> → <code>4096</code>, значение подставляется во все места использования.</li>
+        <li><b>Встраивание</b> (inlining): тело маленькой функции вместо вызова. Главная оптимизация: открывает дорогу всем остальным.</li>
+        <li><b>Удаление мёртвого кода</b>: ветки, которые никогда не выполнятся, и значения, которые никто не читает.</li>
+        <li><b>Вынос инвариантов из цикла</b>: то, что не меняется между итерациями, считается один раз.</li>
+        <li><b>Упрощение операций</b>: умножение на степень двойки → сдвиг.</li>
+      </ul>
+      <p class="note">Включайте проходы по одному. Обратите внимание: многие из них ничего не могут сделать, пока не отработал другой.</p>
+    </div>
+    <div class="demo" data-demo="opt"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Бенчмарк на Go считает хеш строки в цикле и показывает <code>0.3 ns/op</code> — быстрее одного обращения к памяти. Что произошло?</p>
+<pre class="code"><code>
+func BenchmarkHash(b *testing.B) {
+    for i := 0; i &lt; b.N; i++ {
+        hash("hello, world")
+    }
+}
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Процессор закэшировал результат функции</button>
+      <button class="opt text" data-correct>Компилятор встроил <code>hash</code>, увидел, что результат не используется, и удалил вычисление</button>
+      <button class="opt text">Хеш строки посчитан один раз при компиляции и хранится в бинарнике</button>
+      <button class="opt text">Таймер бенчмарка недостаточно точный</button>
+      <div class="explain">После встраивания результат никто не читает, а побочных эффектов нет — значит, это мёртвый код. Остался пустой цикл. Результат надо «использовать»: сохранить в глобальную переменную (<code>sink = hash(…)</code>) или в Go 1.24+ писать цикл как <code>for b.Loop()</code> — он не даёт выбросить вызов. Та же ловушка в Java (JMH: <code>Blackhole.consume</code>) и в C++ (<code>benchmark::DoNotOptimize</code>).</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Интерпретатор: дерево или байткод</h2>
+      <ul class="points">
+        <li><b>Обход дерева</b>: рекурсивно вычисляем узлы AST. Просто, но каждый узел — объект в куче, переход по указателю и косвенный вызов. Так работали ранний Ruby (до 1.9) и многие учебные языки.</li>
+        <li><b>Байткод</b>: дерево один раз компилируется в плоский массив команд. Цикл «прочитать опкод — перейти к обработчику» компактнее, лучше ложится в кэш и в 2–5 раз быстрее обхода дерева.</li>
+        <li>Так устроены CPython, Ruby (YARV), Lua, PHP, первый уровень V8 (Ignition) и JVM в режиме интерпретации.</li>
+      </ul>
+      <p class="note">Главная цена интерпретатора — диспетчеризация: на каждую простую операцию — загрузка опкода и косвенный переход, который предсказатель переходов часто угадывает плохо. Об этом — в презентации про <a href="/cpu/">процессор</a>.</p>
+    </div>
+<pre class="code"><code class="lang-c">
+// Сердце байткодного интерпретатора (упрощённо)
+for (;;) {
+    uint8_t op = *pc++;          // опкод
+    uint8_t arg = *pc++;         // аргумент
+    switch (op) {                // косвенный переход
+    case LOAD_FAST:
+        *sp++ = locals[arg];     // положить на стек
+        break;
+    case BINARY_OP: {
+        PyObject *r = sp[-1], *l = sp[-2];
+        PyObject *res = binary_ops[arg](l, r);  // ещё один косвенный вызов
+        sp -= 1;
+        sp[-1] = res;
+        break;
+    }
+    case RETURN_VALUE:
+        return *--sp;
+    }
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Стековая машина CPython</h2>
+      <p class="lead">Команды берут операнды с вершины стека и кладут результат обратно. Локальные переменные — в массиве «быстрых» слотов, к ним обращаются по номеру, а не по имени.</p>
+      <p class="note">Это настоящий вывод <code>python3.12 -m dis</code>. Нажимайте «Шаг» и следите за стеком. В 3.13–3.14 часть пар команд склеена в одну (<code>LOAD_FAST_LOAD_FAST</code>), но принцип тот же.</p>
+    </div>
+    <div class="demo" data-demo="vm"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Почему CPython медленный</h2>
+      <ul class="points">
+        <li><b>Диспетчеризация</b>: на каждую команду байткода — косвенный переход и десяток служебных инструкций.</li>
+        <li><b>Упаковка</b>: каждое число — объект в куче: 28 байт на <code>int</code> вместо 8, а в списке ещё и указатель на него.</li>
+        <li><b>Динамические типы</b>: <code>a + b</code> каждый раз заново выясняет, что такое <code>a</code> и <code>b</code>.</li>
+        <li><b>Счётчики ссылок</b> меняются на каждом шаге — это записи в память.</li>
+      </ul>
+      <p class="note">Выберите среду и посмотрите, во что обходится одно сложение. Числа — порядок величины для x86-64.</p>
+    </div>
+    <div class="demo" data-demo="cost"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Специализирующий интерпретатор (3.11+)</h2>
+      <p class="lead">CPython 3.11 научился подглядывать за типами. Каждая команда с кэшем после пары выполнений заменяет себя специализированной версией: <code>BINARY_OP</code> → <code>BINARY_OP_ADD_INT</code>. Та проверяет типы одним сравнением и сразу складывает.</p>
+      <p class="note">Если типы поменялись — промах: команда выполняется медленным путём, а после 52 промахов специализируется заново. Нужной специализации нет — откладывает попытку с экспоненциальной паузой. Модель по исходникам CPython 3.12; увидеть у себя: <code>dis.dis(f, adaptive=True)</code>.</p>
+    </div>
+    <div class="demo" data-demo="spec"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Список из миллиона целых чисел. Почему <code>sum(xs)</code> работает в 5–10 раз быстрее, чем цикл?</p>
+<pre class="code"><code class="lang-py">
+s = 0
+for x in xs:
+    s += x
+</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">sum() распараллеливает сложение на все ядра</button>
+      <button class="opt text">sum() использует SIMD-инструкции процессора</button>
+      <button class="opt text" data-correct>Цикл внутри sum() написан на C: нет диспетчеризации байткода, а пока сумма влезает в машинное слово, она копится без создания объектов</button>
+      <button class="opt text">Цикл медленный из-за проверки границ списка</button>
+      <div class="explain">Цикл на Python — это 6–7 команд байткода на элемент: <code>FOR_ITER</code>, <code>STORE_FAST</code>, два <code>LOAD_FAST</code>, <code>BINARY_OP</code>, <code>STORE_FAST</code>, <code>JUMP_BACKWARD</code>, и каждый шаг создаёт новый объект <code>int</code>. <code>sum()</code> пробегает массив указателей в C и складывает в обычную <code>long</code>-переменную. Отсюда правило: чем больше работы внутри встроенных функций, NumPy и C-расширений, тем меньше платите за интерпретатор.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>JIT: горячий код и уровни</h2>
+      <ul class="points">
+        <li>Всё начинается с интерпретатора: он сразу готов к работе и собирает профиль — какие типы приходят, какие ветки выполняются.</li>
+        <li>Счётчики вызовов и итераций циклов находят горячий код. Его компилируют в фоновом потоке: сначала быстро и просто, потом медленно и тщательно.</li>
+        <li>Долгие циклы переключаются на скомпилированный код прямо посреди итераций (OSR, on-stack replacement).</li>
+      </ul>
+      <p class="note">Нажмите «Пуск» и смотрите, как падает время вызова. Пороги JVM — настоящие значения по умолчанию. V8 считает не вызовы, а «бюджет» выполненного байткода — пороги условные.</p>
+    </div>
+    <div class="demo" data-demo="tiers"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Спекуляция и деоптимизация</h2>
+      <p class="lead">Оптимизирующий JIT ставит на то, что типы останутся такими, как в профиле. Код получается как у C, но с проверками-охранниками. Охранник не сработал — деоптимизация: состояние переносится обратно в интерпретатор, а оптимизированный код выбрасывается.</p>
+      <p class="note">Вызывайте <code>add</code> с разными аргументами. В V8 целые до 2³⁰ хранятся без упаковки (Smi), остальные числа — в объектах HeapNumber. Посмотреть у себя: <code>node --trace-opt --trace-deopt app.js</code>.</p>
+    </div>
+    <div class="demo" data-demo="deopt"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Скрытые классы и inline cache</h2>
+      <p class="lead">У объекта JS нет класса, но V8 его заводит: скрытый класс (Map) описывает, какие поля и по каким смещениям лежат. Добавили поле — переход к новому классу. Одинаковый порядок полей — общий класс.</p>
+      <p class="note">Место доступа <code>o.x</code> запоминает пары «класс → смещение». Один класс — мономорфный доступ (сравнение и загрузка), 2–4 — полиморфный, больше 4 — мегаморфный, поиск по общей хеш-таблице. Создавайте объекты и вызывайте <code>getX</code>.</p>
+    </div>
+    <div class="demo" data-demo="shapes"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>AOT, JIT или интерпретатор</h2>
+      <ul class="points">
+        <li><b>AOT</b> (Go, Rust, C, GraalVM native-image): быстрый старт, мало памяти, предсказуемо. Но оптимизировать можно только по статике.</li>
+        <li><b>JIT</b> (JVM, V8, .NET, PyPy): медленный старт и прогрев, больше памяти, зато пиковая скорость на уровне AOT, а иногда выше — компилятор видит реальный профиль.</li>
+        <li><b>Интерпретатор</b> (CPython, Ruby): старт быстрый, но в 30–100 раз медленнее на счётных циклах.</li>
+      </ul>
+      <p class="note">Двигайте ползунок объёма работы: от CLI-утилиты до долгоживущего сервиса. Модель с типичными цифрами для счётного кода; на коде, который ждёт сеть и диск, разница меньше.</p>
+    </div>
+    <div class="demo" data-demo="tradeoff"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Объектные файлы и линковка</h2>
+      <ul class="points">
+        <li>Компилятор превращает каждый файл в объектный (<code>.o</code>): машинный код с дырками на месте адресов и таблица символов — что определено здесь, а что нужно найти (<code>U</code> в выводе <code>nm</code>).</li>
+        <li>Линковщик собирает символы, раскладывает секции по адресам и заполняет дырки по записям о перемещениях (relocations).</li>
+        <li>Статическая линковка копирует код библиотеки в бинарник. Динамическая оставляет ссылку на <code>.so</code> и заглушку в PLT — адрес подставит загрузчик.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="link"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что внутри исполняемого файла</h2>
+      <p class="lead">ELF — формат исполняемых файлов Linux. Секции нужны линковщику и отладчику, сегменты — загрузчику: он отображает их в память с правами <code>r-x</code>, <code>r--</code>, <code>rw-</code>. Часть секций в память не попадает вовсе.</p>
+      <p class="note">Нажмите на секцию. Go — реальные размеры <code>hello world</code> для linux/amd64, C — типичные для gcc -O2 с динамической линковкой.</p>
+    </div>
+    <div class="demo" data-demo="elf"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Что происходит при запуске</h2>
+      <ol class="points">
+        <li>Ядро в <code>execve</code> читает заголовок ELF и отображает сегменты <code>PT_LOAD</code> в память. Страницы читаются с диска лениво — при первом обращении.</li>
+        <li>Если есть <code>PT_INTERP</code>, управление получает динамический загрузчик <code>ld-linux-x86-64.so.2</code>. Он отображает все <code>.so</code> из <code>NEEDED</code>, применяет перемещения и заполняет GOT.</li>
+        <li>Вызываются конструкторы (<code>.init_array</code>), затем <code>_start</code> → <code>main</code>. У Go сначала стартует рантайм: планировщик, сборщик мусора, потом <code>init()</code> всех пакетов.</li>
+      </ol>
+      <p class="note">Код <code>.so</code> отображается из одного файла во все процессы — в памяти он один. Подробнее об отображении файлов — в презентации про <a href="/virtual-memory/">виртуальную память</a>.</p>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ ldd ./app
+  linux-vdso.so.1 (0x00007ffd8a3f2000)
+  libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6
+  /lib64/ld-linux-x86-64.so.2
+
+$ cat /proc/$(pidof app)/maps
+55d0c0a00000-55d0c0a01000 r--p  app        # заголовки
+55d0c0a01000-55d0c0a02000 r-xp  app        # .text
+55d0c0a02000-55d0c0a03000 r--p  app        # .rodata
+55d0c0a03000-55d0c0a05000 rw-p  app        # .data .got
+55d0c1f6b000-55d0c1f8c000 rw-p  [heap]
+7f1c2e400000-7f1c2e428000 r--p  libc.so.6
+7f1c2e428000-7f1c2e5bd000 r-xp  libc.so.6
+7f1c2e7c6000-7f1c2e7f0000 r-xp  ld-linux-x86-64.so.2
+7ffd8a3a1000-7ffd8a3c2000 rw-p  [stack]
+
+$ LD_DEBUG=bindings ./app    # кто чей символ разрешил
+</code></pre>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Go-сервис собрали на Ubuntu, положили в образ <code>alpine</code>. Запуск: <code>exec ./app: no such file or directory</code>. Файл на месте и исполняемый. В чём дело?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Бинарник собран под другую архитектуру процессора</button>
+      <button class="opt text" data-correct>Бинарник динамический, а в Alpine нет загрузчика <code>/lib64/ld-linux-x86-64.so.2</code> из его <code>PT_INTERP</code></button>
+      <button class="opt text">Go-бинарникам нужен установленный рантайм Go</button>
+      <button class="opt text">Не хватает прав на выполнение</button>
+      <div class="explain">Пакеты <code>net</code> и <code>os/user</code> по умолчанию используют cgo, и бинарник линкуется динамически с glibc. Ядро не находит указанный в заголовке загрузчик и возвращает <code>ENOENT</code> — про сам загрузчик, а не про ваш файл. В Alpine вместо glibc — musl. Решение: <code>CGO_ENABLED=0 go build</code> (полностью статический бинарник) или сборка в том же образе. Проверить: <code>file ./app</code> и <code>ldd ./app</code>. Чужая архитектура дала бы <code>exec format error</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li><b>Python</b>: <code>python -m dis</code>, <code>dis.dis(f, adaptive=True)</code> после прогрева — какие команды специализировались.</li>
+        <li><b>Node</b>: байткод — <code>--print-bytecode</code>, решения JIT — <code>--trace-opt --trace-deopt</code>. Горячие места — <code>--cpu-prof</code>.</li>
+        <li><b>Java</b>: <code>-XX:+PrintCompilation</code> — что и на каком уровне скомпилировано, <code>-XX:+PrintInlining</code> (с <code>UnlockDiagnosticVMOptions</code>) — что встроено.</li>
+        <li><b>Go</b>: <code>-gcflags=-m</code> — встраивание и убегание в кучу, <code>-gcflags=-S</code> — ассемблер, <code>GOSSAFUNC</code> — все проходы SSA.</li>
+        <li><b>Любой язык</b>: <a href="https://godbolt.org">godbolt.org</a> — код и ассемблер рядом, <code>perf annotate</code> — где горячо.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ python3 -m dis script.py
+$ node --print-bytecode app.js | less
+$ node --trace-opt --trace-deopt app.js | grep add
+  [marking … add for optimization to TURBOFAN]
+  [bailout (kind: deopt-eager, reason: not a Smi)]
+$ java -XX:+PrintCompilation Main | head
+$ go build -gcflags='-m' ./...
+  ./main.go:7:6: can inline area
+  ./main.go:12:20: inlining call to area
+  ./main.go:20:9: &amp;User{...} escapes to heap
+$ go build -gcflags='-S' 2&gt;&amp;1 | less
+
+$ nm app | grep ' U '   # внешние символы
+$ readelf -lS app        # сегменты, секции
+$ objdump -d --no-show-raw-insn app | less
+$ file app; ldd app      # статический?
+$ go build -ldflags='-s -w'  # без DWARF
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Компилятор — конвейер: токены → дерево → IR → оптимизации → машинный код. Языки различаются тем, какая часть делается до запуска.</li>
+      <li>Главная оптимизация — встраивание: после неё работают свёртка констант, удаление мёртвого кода и вынос из циклов. Поэтому бенчмарки нужно защищать от «слишком умного» компилятора.</li>
+      <li>Интерпретатор платит за диспетчеризацию, упаковку и динамические типы. Переносите горячие циклы во встроенные функции и C-библиотеки.</li>
+      <li>JIT ставит на типы из профиля и откатывается, если ставка не сыграла. Стабильные типы и одинаковый порядок полей — быстрый код.</li>
+      <li>AOT — быстрый старт и мало памяти, JIT — пиковая скорость после прогрева.</li>
+      <li>Бинарник — это сегменты для загрузчика плюс ссылки на <code>.so</code>. Статический бинарник переносим, динамический зависит от загрузчика и libc в системе.</li>
+    </ul>
+    <p class="proverb">Быстрый код — это код, про который компилятор может доказать или угадать, что он простой.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-runtime.js"></script>
+</body>
+</html>

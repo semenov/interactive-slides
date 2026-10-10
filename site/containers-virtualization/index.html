@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Контейнеры и виртуализация — интерактивная презентация</title>
+  <meta name="description" content="Чем контейнер отличается от виртуальной машины: namespaces, cgroups v2, образы и overlayfs, что делает docker run, сеть контейнеров, безопасность, гипервизоры, VT-x и EPT, steal time, microVM и gVisor.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-ct" aria-hidden="true">
+      <div class="hc-row">
+        <div class="hc-box"><b>api</b><i></i><i></i><i class="base"></i><span>pid 1</span></div>
+        <div class="hc-box"><b>worker</b><i></i><i class="base"></i><span>pid 1</span></div>
+        <div class="hc-box vm"><b>ВМ</b><i></i><i class="base"></i><i class="kern"></i><span>своё ядро</span></div>
+      </div>
+      <div class="hc-ns">namespaces · cgroups · seccomp</div>
+      <div class="hc-kernel">ядро Linux <span>одно на всех</span></div>
+      <div class="hc-hw">KVM · VT-x · EPT · железо</div>
+    </div>
+    <div class="stack">
+      <h1>Контейнеры и виртуализация</h1>
+      <p class="lead">Что на самом деле запускает <code>docker run</code>, чем контейнер отличается от виртуальной машины, откуда берутся OOMKilled, медленные сборки, steal time и тормоза Docker на Mac.</p>
+      <p class="note">Финал серии «Как работает компьютер». Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>ВМ и контейнер: что общее</h2>
+      <p class="lead">Виртуальная машина изображает целый компьютер: у каждой своё ядро, своя ОС, свои драйверы. Контейнер — обычный процесс хоста, которому ядро показывает урезанный мир. Ядро одно на всех.</p>
+      <ul class="points">
+        <li>Отсюда и цифры: ВМ грузится десятки секунд и платит сотни мегабайт за гостевую ОС, контейнер стартует за доли секунды почти без накладных.</li>
+        <li>И граница безопасности: у ВМ — гипервизор с узким интерфейсом, у контейнера — всё ядро Linux с сотнями системных вызовов.</li>
+      </ul>
+      <p class="note">Переключайте вид и двигайте число экземпляров. Сервер — 64 ГБ RAM, приложению нужно 200 МБ.</p>
+    </div>
+    <div class="demo" data-demo="stack"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Namespaces: что видит процесс</h2>
+      <p class="lead">Namespace подменяет для процесса одну глобальную таблицу ядра своей копией. Их восемь типов, контейнер — процесс, у которого почти все свои. Создаются флагами <code>clone()</code> и <code>unshare()</code>, вход в чужие — <code>setns()</code>.</p>
+      <p class="note">Выключите namespace — увидите, что процесс в контейнере видит вместо своей копии. Это ровно то, что делают <code>--pid=host</code>, <code>--network=host</code> и подобные флаги.</p>
+    </div>
+    <div class="demo" data-demo="ns"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>PID namespace: два номера у процесса</h2>
+      <p class="lead">PID-namespace вложенные: процесс виден в своём и во всех родительских, и в каждом у него свой номер. Хост видит всё, контейнер — только своё поддерево. Оба номера — в строке <code>NSpid</code> файла <code>/proc/PID/status</code>.</p>
+      <ul class="points">
+        <li>Первый процесс в namespace получает PID 1 и роль init: ему перепадают осиротевшие процессы, а когда он умирает, ядро убивает всех остальных.</li>
+        <li><code>docker exec</code> не создаёт контейнер: он входит в существующие namespaces через <code>setns()</code>.</li>
+      </ul>
+      <p class="note">Нажимайте кнопки и следите за обеими колонками.</p>
+    </div>
+    <div class="demo" data-demo="pidns"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>cgroups v2: что бывает на лимите</h2>
+      <p class="lead">Namespaces решают, что процесс видит, cgroups — сколько он потребляет. Контейнер — это каталог в <code>/sys/fs/cgroup</code>, лимиты — файлы в нём. У каждого контроллера своя реакция на превышение.</p>
+      <ul class="points">
+        <li>CPU и диск лимит не убивает, а замедляет. Память и PID — убивает или ломает.</li>
+        <li>Счётчики событий — в <code>cpu.stat</code>, <code>memory.events</code>, <code>pids.events</code>, давление — в <code>*.pressure</code> (PSI).</li>
+      </ul>
+      <p class="note">Выберите контроллер и двигайте нагрузку. Основы <code>cpu.max</code> — в <a href="/processes-threads/#16">«Процессах и потоках»</a>, <code>memory.max</code> — в <a href="/virtual-memory/">«Виртуальной памяти»</a>.</p>
+    </div>
+    <div class="demo" data-demo="limits"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Контейнер запущен с <code>--memory=512m --cpus=2</code> на сервере с 64 ГБ и 32 ядрами. Внутри выполнили <code>free -m</code> и <code>nproc</code>. Что они покажут?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">512 МБ и 2 ядра</button>
+      <button class="opt text">512 МБ и 32 ядра</button>
+      <button class="opt text" data-correct>64 ГБ и 32 ядра</button>
+      <button class="opt text">64 ГБ и 2 ядра</button>
+      <div class="explain"><code>free</code> читает <code>/proc/meminfo</code>, а он не виртуализирован: это память хоста. <code>nproc</code> смотрит маску <code>sched_getaffinity</code>, а <code>--cpus</code> — это квота в <code>cpu.max</code>, не привязка к ядрам. Поэтому и <code>os.cpu_count()</code>, и <code>runtime.NumCPU()</code> видят 32. Правда — в <code>/sys/fs/cgroup/memory.max</code> и <code>cpu.max</code>; JVM и .NET читают их сами, Go с 1.25 — только <code>cpu.max</code> для GOMAXPROCS; остальным передайте размеры пулов явно.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Образ — стопка слоёв, overlayfs их склеивает</h2>
+      <p class="lead">Каждая инструкция Dockerfile, меняющая файлы, даёт слой — tar-архив с разницей. При запуске слои становятся read-only каталогами <code>lowerdir</code>, сверху кладётся пустой <code>upperdir</code> контейнера, а процесс видит их склейку — <code>merged</code>.</p>
+      <ul class="points">
+        <li>Чтение — из самого верхнего слоя, где файл есть.</li>
+        <li>Первая запись в файл из нижнего слоя копирует его целиком наверх (copy-up).</li>
+        <li>Удаление кладёт наверх whiteout — «файла нет». Байты в нижнем слое остаются.</li>
+      </ul>
+      <p class="note">Выберите файл в <code>merged</code> и действие.</p>
+    </div>
+    <div class="demo" data-demo="overlay"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Порядок в Dockerfile и кэш сборки</h2>
+      <p class="lead">Шаг берётся из кэша, если не изменились сама инструкция, родительский слой и — для <code>COPY</code> — контрольные суммы копируемых файлов. Первый промах инвалидирует все шаги ниже.</p>
+      <ul class="points">
+        <li>Редко меняющееся — наверх, код — в самый низ.</li>
+        <li><code>.dockerignore</code> обязателен: без него <code>COPY&nbsp;.&nbsp;.</code> зависит и от <code>.git</code>, и от логов.</li>
+        <li>BuildKit умеет кэш между сборками: <code>RUN --mount=type=cache,target=/root/.cache/pip</code>.</li>
+      </ul>
+      <p class="note">Поменяйте файл, соберите, затем переключите порядок.</p>
+    </div>
+    <div class="demo" data-demo="cache"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Размер образа и distroless</h2>
+      <p class="lead">Размер — это время скачивания на каждом новом узле при автоскейлинге, а каждый лишний пакет — ещё строки в отчёте сканера уязвимостей. Слои с одинаковым хешем скачиваются один раз и делятся между образами.</p>
+      <ul class="points">
+        <li>Multi-stage: собираем в толстом образе, в финальный копируем только результат.</li>
+        <li>Alpine маленький, но на musl: колёса <code>manylinux</code> не встают, пакеты собираются из исходников, другой malloc и DNS-резолвер.</li>
+        <li>В distroless нет shell — отлаживают через <code>kubectl debug</code> с эфемерным контейнером.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <div class="imgs">
+        <div class="img-row"><code>python:3.12</code><span class="cost-track"><span class="cost-fill" style="width:100%"></span></span><b>~1 ГБ</b></div>
+        <div class="img-row"><code>python:3.12-slim</code><span class="cost-track"><span class="cost-fill" style="width:13%"></span></span><b>~130 МБ</b></div>
+        <div class="img-row"><code>python:3.12-alpine</code><span class="cost-track"><span class="cost-fill" style="width:5%"></span></span><b>~50 МБ</b></div>
+        <div class="img-row"><code>distroless/python3</code><span class="cost-track"><span class="cost-fill" style="width:5%"></span></span><b>~50 МБ</b></div>
+        <div class="img-row"><code>golang:1.23</code><span class="cost-track"><span class="cost-fill" style="width:82%"></span></span><b>~820 МБ</b></div>
+        <div class="img-row"><span><code>distroless/static</code> + Go</span><span class="cost-track"><span class="cost-fill" style="width:2%"></span></span><b>~15 МБ</b></div>
+      </div>
+<pre class="code"><code class="lang-plain">
+FROM golang:1.23 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /app ./cmd/api
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /app /app
+ENTRYPOINT ["/app"]       # ~15 МБ вместо ~850
+</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В Dockerfile: <code>COPY id_rsa /root/.ssh/</code>, затем <code>RUN git clone …</code>, затем <code>RUN rm /root/.ssh/id_rsa</code>. Образ опубликовали. Ключ в безопасности?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Да: в финальной файловой системе файла нет</button>
+      <button class="opt text" data-correct>Нет: ключ лежит в слое от <code>COPY</code>, его достанет любой, кто скачал образ</button>
+      <button class="opt text">Да, если <code>rm</code> стоит последним шагом</button>
+      <button class="opt text">Нет, но только в образах больше 1 ГБ</button>
+      <div class="explain">Слои неизменяемы, <code>rm</code> лишь добавляет whiteout в новый слой. <code>docker save</code> или <code>crane export</code> — и ключ на руках. То же с <code>ENV TOKEN=…</code> и <code>ARG</code>: они видны в <code>docker history</code>. Секреты при сборке передают через <code>RUN --mount=type=secret</code> или <code>--mount=type=ssh</code> — они не попадают ни в один слой.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что делает <code>docker run</code></h2>
+      <p class="lead">Docker — это цепочка: CLI просит демона, демон — containerd, containerd запускает shim и <code>runc</code>. Сам контейнер создаёт маленькая программа runc за несколько системных вызовов и уходит. В Kubernetes вместо dockerd — kubelet, говорящий с containerd через CRI.</p>
+      <p class="note">Нажимайте «Дальше» — шаг за шагом от команды до вашего PID 1.</p>
+    </div>
+    <div class="demo" data-demo="run"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сеть контейнера: veth, мост, NAT</h2>
+      <p class="lead">У контейнера свой сетевой namespace с одним <code>eth0</code>. Это конец veth-пары — виртуального кабеля, второй конец которого воткнут в мост <code>docker0</code> на хосте. Наружу — через NAT, внутрь — через DNAT опубликованного порта.</p>
+      <p class="note">Выберите сценарий и проведите пакет по шагам. Как работает сам NAT — в <a href="/networking/">«Сетях»</a>.</p>
+    </div>
+    <div class="demo" data-demo="netpath"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Pod в Kubernetes — общие namespaces</h2>
+      <p class="lead">Pod — это не контейнер, а группа контейнеров с общей сетью. Первым запускается крошечный <code>pause</code>: он держит net-, ipc- и uts-namespace. Остальные контейнеры входят в них через <code>setns()</code>.</p>
+      <ul class="points">
+        <li>Один IP на pod, контейнеры ходят друг к другу по <code>localhost</code> — так работают sidecar-прокси вроде Envoy в Istio.</li>
+        <li>Пространство портов тоже общее.</li>
+        <li>Файловые системы у контейнеров свои, PID-namespace — тоже, пока не включён <code>shareProcessNamespace</code>.</li>
+        <li>Сеть pod настраивает CNI-плагин: veth, мост или маршруты, оверлей между узлами.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ crictl pods
+POD ID         NAME              STATE
+7f3c1a9e2b10   api-7d9f8-xk2lp   Ready
+
+$ crictl ps --pod 7f3c1a9e2b10
+CONTAINER      IMAGE    NAME
+a41d…          api      api
+9be0…          envoy    istio-proxy
+
+$ lsns -t net
+        NS TYPE NPROCS   PID COMMAND
+4026532871 net       9 51207 /pause
+# api и envoy — в том же namespace,
+# что и pause: 9 процессов на один IP
+
+$ nsenter -t 51207 -n ss -ltn
+LISTEN 0.0.0.0:8080     # api
+LISTEN 0.0.0.0:15001    # envoy
+</code></pre>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В pod два контейнера: основное приложение и sidecar с метриками. Оба по умолчанию слушают <code>0.0.0.0:8080</code>. Что будет при запуске?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Всё работает: у каждого контейнера свой порт 8080</button>
+      <button class="opt text">Kubernetes сам переназначит один из портов</button>
+      <button class="opt text" data-correct>Второй упадёт с <code>EADDRINUSE: address already in use</code></button>
+      <button class="opt text">Запросы будут распределяться между ними по очереди</button>
+      <div class="explain">Сетевой namespace у контейнеров pod один, значит и таблица сокетов одна. Кто первым сделал <code>bind()</code>, тот и занял порт; второй контейнер уйдёт в <code>CrashLoopBackOff</code>. Поле <code>containerPort</code> в манифесте ничего не настраивает — это документация. Порт меняют в конфигурации самого приложения.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Безопасность: ядро одно на всех</h2>
+      <ul class="points">
+        <li>root в контейнере без user namespace — это настоящий UID 0 хоста, только с урезанными <b>capabilities</b>: из ~40 Docker оставляет 14.</li>
+        <li><b>seccomp</b> запрещает около 44 системных вызовов, которые нужны только для администрирования: <code>mount</code>, <code>reboot</code>, <code>init_module</code>, <code>kexec_load</code>…</li>
+        <li><b>Rootless</b> и user namespace: UID 0 внутри — это, например, UID 100000 снаружи. Выбрались из контейнера — оказались никем.</li>
+        <li><code>--privileged</code> снимает всё сразу. Это уже не изоляция, а root на хосте.</li>
+      </ul>
+      <p class="note">Выберите режим запуска и посмотрите, что получится у процесса с UID 0 внутри.</p>
+    </div>
+    <div class="demo" data-demo="sec"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Гипервизор: trap-and-emulate</h2>
+      <p class="lead">Гостевой код исполняется прямо на процессоре — никакой эмуляции. VT-x и AMD-V добавили режим «гость»: ядро гостя работает в своём кольце 0, а чувствительные инструкции вызывают VM exit — выход в гипервизор, который их эмулирует и возвращает управление.</p>
+      <ul class="points">
+        <li>Type 1 (ESXi, Xen, Hyper-V) работает прямо на железе. Type 2 — программа в ОС (VirtualBox). KVM — модуль ядра Linux, так что Linux сам становится гипервизором.</li>
+        <li>Дорого не исполнение, а выходы. Поэтому устройства паравиртуальные — <b>virtio</b>: гость знает, что он в ВМ, и сдаёт работу пачками.</li>
+      </ul>
+      <p class="note">Запускайте гостевые операции и смотрите на счётчик выходов.</p>
+    </div>
+    <div class="demo" data-demo="trap"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Вложенные таблицы страниц: EPT и NPT</h2>
+      <p class="lead">В ВМ адрес переводится дважды: виртуальный гостя → физический гостя по таблицам гостевого ядра, затем → физический хоста по таблицам гипервизора (EPT у Intel, NPT у AMD). Без них гипервизор вёл бы теневые таблицы и ловил каждую запись в таблицы гостя.</p>
+      <p class="note">Цена — промах TLB: каждый адрес гостевой таблицы тоже надо перевести. Выберите размеры страниц и нажмите «Пройти». Про таблицы страниц и TLB — в <a href="/virtual-memory/">«Виртуальной памяти»</a>.</p>
+    </div>
+    <div class="demo" data-demo="ept"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Шумные соседи и steal time</h2>
+      <p class="lead">vCPU — это поток на хосте. Если соседи хотят больше процессора, чем есть физических ядер, ваш vCPU стоит в очереди, хотя готов работать. Гипервизор сообщает гостевому ядру, сколько времени vCPU простоял в очереди, а ядро показывает это как <code>st</code> в <code>top</code>.</p>
+      <ul class="points">
+        <li>Steal — время, которое вам должны, но не дали. Ваш код не виноват; лечится переездом на другой хост или выделенными ядрами.</li>
+        <li>У burstable-инстансов (AWS T, доли vCPU 5–50% в других облаках) кончившиеся кредиты тоже видны как steal.</li>
+      </ul>
+      <p class="note">Двигайте нагрузку соседей. Хост — 16 потоков, у вас 4 vCPU.</p>
+    </div>
+    <div class="demo" data-demo="steal"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Посередине: microVM и gVisor</h2>
+    <p class="lead">Чужой код в контейнере на общем ядре — риск. Полная ВМ — дорого. Облака выбрали промежуточные варианты.</p>
+    <div class="rt">
+      <div class="rt-row rt-head"><span></span><span>Граница</span><span>Старт и накладные</span><span>Где</span></div>
+      <div class="rt-row"><b>runc</b><span>общее ядро хоста, ~350 системных вызовов</span><span>~0,3 с, единицы МБ</span><span>Docker, Kubernetes по умолчанию</span></div>
+      <div class="rt-row"><b>gVisor</b><span>ядро в пространстве пользователя на Go (Sentry) перехватывает системные вызовы; к хосту — несколько десятков разрешённых</span><span>быстрый старт, но системные вызовы и I/O в разы дороже</span><span>GKE Sandbox, Cloud Run первого поколения</span></div>
+      <div class="rt-row"><b>Kata</b><span>каждый pod в лёгкой ВМ со своим ядром</span><span>~1 с, десятки МБ</span><span>Kubernetes через RuntimeClass</span></div>
+      <div class="rt-row"><b>Firecracker</b><span>microVM: KVM + минимальный VMM на Rust, только virtio-сеть, -диск и консоль</span><span>~125 мс до init, ~5 МБ на VMM</span><span>AWS Lambda, Fargate, Fly.io</span></div>
+    </div>
+    <p class="note">Lambda держит тысячи microVM на одном сервере и умеет восстанавливать их из снимков памяти (SnapStart) — отсюда холодный старт в сотни миллисекунд, а не секунды.</p>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Docker на macOS — это Linux в ВМ</h2>
+      <p class="lead">Контейнеру нужно ядро Linux, а у macOS его нет. Docker Desktop, OrbStack, Colima запускают Linux в лёгкой ВМ через Virtualization.framework, и контейнеры живут там.</p>
+      <ul class="points">
+        <li>Bind mount <code>-v .:/app</code> — это общий каталог через virtiofs. Каждый <code>stat</code> и <code>open</code> пересекает границу ВМ, поэтому <code>npm install</code> и Python-импорты из 30 000 файлов тормозят в разы.</li>
+        <li>Лечение: <code>node_modules</code> и <code>.venv</code> — в именованный том внутри ВМ; синхронизация файлов вместо монтирования.</li>
+        <li>Образ <code>linux/amd64</code> на Apple Silicon работает через Rosetta или QEMU — медленнее и с сюрпризами. Собирайте <code>linux/arm64</code>.</li>
+        <li>Память под контейнеры — это память ВМ: лимит задаётся в настройках, и <code>docker stats</code> не видит Mac.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ uname -sm               # на Mac
+Darwin arm64
+$ docker run --rm alpine uname -sr
+Linux 6.10.14-linuxkit    # ядро ВМ
+
+# медленно: node_modules идёт через virtiofs
+$ docker run -v .:/app node npm ci
+
+# быстро: node_modules в томе внутри ВМ
+$ docker run -v .:/app \
+    -v nm:/app/node_modules node npm ci
+
+$ docker run --platform linux/amd64 …
+WARNING: The requested image's platform
+(linux/amd64) does not match the detected
+host platform (linux/arm64/v8)
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li>Namespaces: <code>lsns</code>, <code>ls -l /proc/PID/ns</code>. Зайти в namespace контейнера с инструментами хоста — <code>nsenter -t PID -n</code> (только сеть: <code>ss</code>, <code>tcpdump</code> внутри distroless).</li>
+        <li>cgroups: <code>systemd-cgls</code>, <code>systemd-cgtop</code>, файлы в <code>/sys/fs/cgroup/…/</code>: <code>cpu.stat</code>, <code>memory.events</code>, <code>*.pressure</code>.</li>
+        <li>Контейнер: <code>docker inspect</code> (PID на хосте, слои overlay, IP), в Kubernetes — <code>crictl inspect</code>, <code>crictl ps</code>.</li>
+        <li>ВМ: <code>st</code> в <code>top</code> и <code>vmstat 1</code>, <code>systemd-detect-virt</code>, на хосте KVM — <code>perf kvm stat</code> покажет VM exits по причинам.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ PID=$(docker inspect -f '{{.State.Pid}}' api)
+$ grep NSpid /proc/$PID/status
+NSpid:  48213   1
+$ ls -l /proc/$PID/ns | awk '{print $NF}'
+cgroup:[4026532880] ipc:[4026532814]
+mnt:[4026532812] net:[4026532817] …
+
+$ nsenter -t $PID -n ss -ltnp   # сеть контейнера
+$ cat /proc/$PID/cgroup
+0::/system.slice/docker-3f9c….scope
+$ cd /sys/fs/cgroup/system.slice/docker-3f9c….scope
+$ cat cpu.stat | grep throttled
+nr_throttled 1840
+throttled_usec 92314411
+$ cat memory.events pids.events
+
+$ docker inspect -f '{{.GraphDriver.Data.UpperDir}}' api
+/var/lib/docker/overlay2/9d1e…/diff
+</code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Контейнер — процесс хоста: namespaces решают, что он видит, cgroups — сколько потребляет. Ядро одно на всех.</li>
+      <li>Рантайм внутри не знает лимитов, если не прочитает их из <code>/sys/fs/cgroup</code>: пулы, кучи и воркеры настраивайте явно.</li>
+      <li>CPU и диск на лимите тормозят, память убивает (137), лимит PID ломает <code>fork</code>.</li>
+      <li>Образ — неизменяемые слои: порядок в Dockerfile решает судьбу кэша, удалённый секрет остаётся в слое.</li>
+      <li>Сеть — veth, мост и NAT; pod — общий сетевой namespace.</li>
+      <li>ВМ исполняет код нативно и платит за выходы и двойной перевод адресов. Steal — чужая нагрузка, не ваша.</li>
+    </ul>
+    <p class="proverb">Контейнер — это не маленькая виртуальная машина, а процесс, которому ядро недоговаривает.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-vm.js"></script>
+</body>
+</html>

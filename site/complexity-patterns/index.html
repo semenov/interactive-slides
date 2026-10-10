@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Сложность алгоритмов и паттерны задач — интерактивная презентация</title>
+  <meta name="description" content="O-нотация и что она скрывает, рост функций, амортизированная сложность, стоимость встроенных операций, паттерны задач с собеседований (два указателя, окно, префиксные суммы, бинпоиск по ответу, монотонный стек) и случайный O(n²) в продакшене.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <svg class="hero-curves" viewBox="0 0 320 280" aria-hidden="true">
+      <rect class="bg" x="0" y="0" width="320" height="280" rx="14"/>
+      <g class="grid"><path d="M34 26v214h222"/></g>
+      <path class="cv c1" d="M34 228 H250"/>
+      <path class="cv c2" d="M34 238 C60 214 110 206 250 200"/>
+      <path class="cv c3" d="M34 240 L250 160"/>
+      <path class="cv c4" d="M34 240 C110 214 190 170 250 112"/>
+      <path class="cv c5" d="M34 240 C140 236 200 160 226 30"/>
+      <path class="cv c6" d="M34 240 C130 240 152 180 164 30"/>
+      <text x="258" y="232">1</text>
+      <text x="258" y="204">log n</text>
+      <text x="258" y="164">n</text>
+      <text x="258" y="116">n log n</text>
+      <text x="234" y="38">n²</text>
+      <text x="172" y="38">2ⁿ</text>
+    </svg>
+    <div class="stack">
+      <h1>Сложность алгоритмов и паттерны задач</h1>
+      <p class="lead">Что на самом деле значит O(n log n), как по ограничениям угадать нужный алгоритм, сколько стоят встроенные операции Python — и пять приёмов, которые решают добрую половину задач на собеседованиях.</p>
+      <p class="note">Первая часть серии «Алгоритмы и структуры данных». Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки. Следующая тема — <a href="/arrays-hashing/">массивы и хеширование</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что скрывает O‑большое</h2>
+      <p class="lead"><code>O(f(n))</code> — верхняя оценка роста с точностью до константы при больших <i>n</i>. Она отвечает на вопрос «что будет, если данных станет в 10 раз больше», но не «что быстрее сейчас».</p>
+      <ul class="points">
+        <li>Константы и младшие члены отброшены: <code>100·n</code> и <code>n</code> — оба O(n).</li>
+        <li>Кэш не учтён: обход массива и связного списка — оба O(n), но массив в разы быстрее (<a href="/cpu/#11">подробнее про кэш</a>).</li>
+        <li>На малых <i>n</i> простой квадратичный алгоритм часто выигрывает. Поэтому Timsort в Python и Java сортирует куски по 32–64 элемента вставками, а <code>sort</code> в Go — отрезки до 12 элементов.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="crossover"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как растут функции</h2>
+      <p class="lead">Грубая, но рабочая оценка: простой цикл на C, Go или Java делает около 10⁸ шагов в секунду. Python — в 30–100 раз меньше, если не уходит в C (numpy, встроенные функции).</p>
+      <p class="note">Двигайте <i>n</i>. Шкала полос логарифмическая: каждое деление — в 1000 раз больше. Зелёная отметка — укладывается в секунду при 10⁸ шагов/с.</p>
+    </div>
+    <div class="demo" data-demo="growth"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Ограничения подсказывают решение</h2>
+      <p class="lead">В условии задачи всегда есть <code>n ≤ …</code>. Это подсказка: лимит времени около секунды, значит, допустимо порядка 10⁸ шагов. Отсюда — какую сложность от вас ждут.</p>
+      <p class="note">На собеседовании ограничения часто не называют — спросите сами: «сколько элементов? влезает ли в память? сколько запросов?». Это и есть первый шаг к выбору алгоритма.</p>
+    </div>
+    <div class="cn-table">
+      <div class="cn-row cn-head"><span>n до</span><span>сложность</span><span>что обычно это</span></div>
+      <div class="cn-row"><b>10</b><code>n!</code><span>перебор перестановок</span></div>
+      <div class="cn-row"><b>20</b><code>2ⁿ · n</code><span>перебор подмножеств, битовые маски</span></div>
+      <div class="cn-row"><b>500</b><code>n³</code><span>тройной цикл, ДП по отрезкам, Флойд</span></div>
+      <div class="cn-row"><b>5 000</b><code>n²</code><span>двойной цикл, ДП на двух строках</span></div>
+      <div class="cn-row"><b>10⁶</b><code>n log n</code><span>сортировка, куча, бинпоиск, дерево</span></div>
+      <div class="cn-row"><b>10⁸</b><code>n</code><span>один проход: окно, указатели, хеш</span></div>
+      <div class="cn-row"><b>больше</b><code>log n, 1</code><span>бинпоиск, формула, математика</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В условии: «дано <i>n ≤ 18</i> заданий, у каждого время и награда…». Какую сложность, скорее всего, ждут?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">O(n log n): отсортировать и пройти жадно</button>
+      <button class="opt text" data-correct>O(2ⁿ · n): перебрать подмножества или ДП по битовым маскам</button>
+      <button class="opt text">O(n!): перебрать все порядки</button>
+      <button class="opt text">O(n): тут явно хватит одного прохода</button>
+      <div class="explain">Если бы хватало O(n log n), дали бы <i>n</i> до 10⁵. Маленькое <i>n</i> — намёк, что полиномиального решения нет или оно сложное: 2¹⁸ · 18 ≈ 4,7 млн шагов — мгновенно. А 18! ≈ 6,4 · 10¹⁵ — это годы. Перестановки при таком <i>n</i> заменяют ДП по маскам: состояние — «какие задания уже сделаны».</div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Амортизированная сложность</h2>
+      <p class="lead">Динамический массив (<code>list</code>, <code>[]T</code>, <code>ArrayList</code>, JS <code>Array</code>) при нехватке места выделяет новый и копирует всё. Отдельный <code>append</code> бывает O(n), но в среднем по любой последовательности — O(1).</p>
+      <ul class="points">
+        <li>Если ёмкость растёт <b>в k раз</b>, копирований всего меньше <code>n · 1/(k−1)</code> — константа на элемент.</li>
+        <li>Если растёт <b>на константу</b>, копирований ~n²/(2c) — каждый append в среднем O(n).</li>
+        <li>Реальные множители: Go ×2 (с 256 элементов ~×1,25), Java ×1,5, V8 ×1,5 + 16, CPython ×1,125 + 6. Память и сборщик мусора — в <a href="/stack-and-heap/#16">«Цене роста»</a>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="dynarray"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Память и глубина рекурсии</h2>
+      <p class="lead">Память тоже сложность. Рекурсия тратит O(глубины) памяти на стек вызовов: обход сбалансированного дерева — O(log n), обход «дерева-списка» — O(n). А стек маленький и с жёстким пределом.</p>
+      <ul class="points">
+        <li>Python: <code>sys.getrecursionlimit()</code> = 1000 кадров — <code>RecursionError</code>.</li>
+        <li>JS (V8) — около 10 тыс. кадров, Java — 10–50 тыс. при стеке 1 МБ (<code>-Xss</code>), Go растит стек горутины до 1 ГБ.</li>
+        <li>Рекурсия на пользовательских данных (JSON, дерево комментариев, граф) — переписывайте на явный стек. Как устроен сам стек — <a href="/stack-and-heap/#6">в презентации про стек и кучу</a>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="recursion"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Сколько стоят встроенные операции</h2>
+      <p class="lead">Самые дорогие ошибки — одна строчка, которая выглядит как O(1). В Python <code>list</code> — массив указателей, <code>set</code> и <code>dict</code> — хеш-таблицы, <code>str</code> неизменяемая.</p>
+      <p class="note">То же в других языках: Java <code>ArrayList.add(0, x)</code> и <code>remove(Object)</code> — O(n), <code>LinkedList.get(i)</code> — O(n); JS <code>arr.includes</code>, <code>indexOf</code>, <code>unshift</code> — O(n); в Go вставка в начало слайса — <code>copy</code> всего хвоста.</p>
+    </div>
+    <div class="bi-table">
+      <div class="bi-row bi-head"><span>операция</span><span>цена</span><span>вместо</span></div>
+      <div class="bi-row"><span class="bi-op"><code>lst.append(x)</code></span><b class="ok">O(1)*</b><span>* амортизированно</span></div>
+      <div class="bi-row"><span class="bi-op"><code>lst.insert(0, x)</code>, <code>lst.pop(0)</code></span><b class="bad">O(n)</b><span><code>collections.deque</code></span></div>
+      <div class="bi-row"><span class="bi-op"><code>x in lst</code>, <code>lst.index(x)</code>, <code>lst.remove(x)</code></span><b class="bad">O(n)</b><span><code>set</code> / <code>dict</code></span></div>
+      <div class="bi-row"><span class="bi-op"><code>x in s</code>, <code>d[k]</code></span><b class="ok">O(1)</b><span>в среднем; худший — O(n)</span></div>
+      <div class="bi-row"><span class="bi-op"><code>lst[a:b]</code>, <code>s[1:]</code></span><b class="bad">O(b−a)</b><span>копия! индексы, <code>islice</code>, <code>memoryview</code></span></div>
+      <div class="bi-row"><span class="bi-op"><code>s += t</code> в цикле</span><b class="bad">до O(n²)</b><span><code>''.join(parts)</code>, <code>io.StringIO</code></span></div>
+      <div class="bi-row"><span class="bi-op"><code>sorted(lst)</code>, <code>lst.sort()</code></span><b>O(n log n)</b><span>почти отсортированное — почти O(n)</span></div>
+      <div class="bi-row"><span class="bi-op"><code>heapq.heappush</code>, <code>bisect.bisect</code></span><b class="ok">O(log n)</b><span>но <code>bisect.insort</code> — O(n)</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В <code>data</code> 10⁵ элементов. Какой фрагмент работает за квадратичное время?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt"># сумма
+total = 0
+for x in data: total += x</button>
+      <button class="opt" data-correct># очередь задач
+q = list(data)
+while q: handle(q.pop(0))</button>
+      <button class="opt"># уникальные в порядке появления
+seen = set(); out = []
+for x in data:
+    if x not in seen: seen.add(x); out.append(x)</button>
+      <button class="opt"># склеить в строку
+s = ','.join(map(str, data))</button>
+      <div class="explain"><code>pop(0)</code> сдвигает все оставшиеся элементы: 10⁵ вызовов × в среднем 5 · 10⁴ сдвигов = 5 · 10⁹ перемещений указателей. Это секунды вместо миллисекунд. Для очереди есть <code>collections.deque</code> с <code>popleft()</code> за O(1). Остальные три — O(n).</div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Паттерны: как узнать задачу</h2>
+    <p class="lead">Задач тысячи, приёмов — пара десятков. Учитесь узнавать приём по признакам в условии. Пять самых частых разберём по шагам, остальные — в следующих частях серии.</p>
+    <div class="pt-grid">
+      <div class="pt-card main"><b>Два указателя</b><span>отсортированный массив; пара или тройка с условием; слияние; «на месте»</span></div>
+      <div class="pt-card main"><b>Скользящее окно</b><span>непрерывный подотрезок или подстрока; «самый длинный / короткий, такой что…»</span></div>
+      <div class="pt-card main"><b>Префиксные суммы</b><span>много запросов суммы на отрезке; «сколько подмассивов с суммой k»</span></div>
+      <div class="pt-card main"><b>Бинпоиск по ответу</b><span>«минимальное X, при котором можно…»; проверка монотонна</span></div>
+      <div class="pt-card main"><b>Монотонный стек</b><span>«ближайший больший / меньший»; гистограммы; «сколько дней до…»</span></div>
+      <div class="pt-card"><b>Хеш-таблица</b><span>«встречалось ли», пары с суммой, группировка, подсчёт — <a href="/arrays-hashing/">массивы и хеширование</a></span></div>
+      <div class="pt-card"><b>Куча</b><span>top-k, k-й по величине, слияние k списков, расписание — <a href="/trees-heaps/">деревья и кучи</a></span></div>
+      <div class="pt-card"><b>BFS / DFS</b><span>сетка, связи, «кратчайшее число шагов», зависимости — <a href="/graphs/">графы</a></span></div>
+      <div class="pt-card"><b>ДП и жадность</b><span>«сколько способов», «минимальная стоимость», выбор с ограничением — <a href="/dp-greedy/">ДП и жадные</a></span></div>
+      <div class="pt-card"><b>Перебор с возвратом</b><span>«все варианты», маленькое n, перестановки и подмножества</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Два указателя</h2>
+      <p class="lead">Найти в отсортированном массиве пару с суммой <i>target</i>. Перебор пар — O(n²). Указатели с двух концов — O(n): если сумма мала, левый элемент не подойдёт ни к одному из оставшихся, его можно выбросить.</p>
+<pre class="code"><code class="lang-py">
+def pair_sum(a, target):
+    l, r = 0, len(a) - 1
+    while l &lt; r:
+        s = a[l] + a[r]
+        if s == target: return l, r
+        if s &lt; target: l += 1
+        else: r -= 1
+    return None
+</code></pre>
+      <p class="note">В жизни: шаг слияния в merge sort, Merge Join в PostgreSQL, слияние отсортированных сегментов в LSM-деревьях (RocksDB, Cassandra), <code>git diff</code> по отсортированным спискам.</p>
+    </div>
+    <div class="demo" data-demo="twopointers"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Скользящее окно</h2>
+      <p class="lead">Самая длинная подстрока без повторов. Правая граница идёт вперёд, левая — только догоняет. Каждый индекс входит в окно и выходит из него по разу: O(n) вместо O(n²) или O(n³).</p>
+<pre class="code"><code class="lang-py">
+def longest_unique(s):
+    last, l, best = {}, 0, 0
+    for r, ch in enumerate(s):
+        if last.get(ch, -1) >= l:
+            l = last[ch] + 1  # за повтор
+        last[ch] = r
+        best = max(best, r - l + 1)
+    return best
+</code></pre>
+      <p class="note">В жизни: rate limiter со скользящим окном, скользящее среднее в метриках, окно TCP (<a href="/networking/">сети</a>), окна в Kafka Streams и Flink.</p>
+    </div>
+    <div class="demo" data-demo="window"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Префиксные суммы</h2>
+      <p class="lead">Один проход O(n) — и потом сумма любого отрезка за O(1): <code>P[r+1] − P[l]</code>. Окупается, когда запросов много: 10⁵ запросов по 10⁵ элементам — 10⁵ вычитаний вместо 10¹⁰ сложений.</p>
+<pre class="code"><code class="lang-py">
+from itertools import accumulate
+P = [0, *accumulate(a)]  # P[i] = sum(a[:i])
+def range_sum(l, r):      # включительно
+    return P[r + 1] - P[l]
+</code></pre>
+      <p class="note">«Сколько подмассивов с суммой k» — тоже префиксы: идём слева направо и считаем в <code>dict</code>, сколько раз встречалась сумма <code>P − k</code>. В жизни: счётчики Prometheus накопительные, и <code>rate()</code> — это разность префиксных сумм; суммы по прямоугольнику в обработке изображений.</p>
+    </div>
+    <div class="demo" data-demo="prefix"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Бинпоиск по ответу</h2>
+      <p class="lead">Посылки едут по порядку, за <i>D</i> дней. Какая минимальная грузоподъёмность? Искать ответ напрямую трудно, а проверить «хватит ли <i>C</i>» — легко жадным проходом O(n). И если хватает <i>C</i>, хватит и <i>C + 1</i>.</p>
+<pre class="code"><code class="lang-py">
+lo, hi = max(w), sum(w)
+while lo &lt; hi:
+    mid = (lo + hi) // 2
+    if days_needed(w, mid) &lt;= D: hi = mid
+    else: lo = mid + 1
+return lo        # O(n · log(sum))
+</code></pre>
+      <p class="note">Признак: «минимальное / максимальное X, при котором…» и монотонная проверка. В жизни: <code>git bisect</code>, подбор максимального размера батча, который не падает по памяти, поиск порога в нагрузочном тесте.</p>
+    </div>
+    <div class="demo" data-demo="binans"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Монотонный стек</h2>
+      <p class="lead">Для каждого элемента найти ближайший справа, который больше. В стеке ждут элементы, для которых ответ ещё не найден, — их значения убывают. Новый элемент выталкивает всех, кто меньше него, и становится их ответом.</p>
+<pre class="code"><code class="lang-py">
+ans, st = [-1] * len(a), []
+for i, x in enumerate(a):
+    while st and a[st[-1]] &lt; x:
+        ans[st.pop()] = x
+    st.append(i)
+</code></pre>
+      <p class="note">Вложенный <code>while</code> не делает алгоритм квадратичным: каждый индекс кладут и вынимают ровно по разу — всего не больше 2n операций. Это тоже амортизированный анализ. Задачи: «сколько дней до потепления», наибольший прямоугольник в гистограмме, индикатор stock span.</p>
+    </div>
+    <div class="demo" data-demo="monostack"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Найти длину самого длинного подотрезка с суммой не больше <i>K</i>. Все числа положительные, <i>n ≤ 10⁵</i>. Какой приём?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Отсортировать и взять два указателя с концов</button>
+      <button class="opt text" data-correct>Скользящее окно: расширяем справа, пока сумма ≤ K, иначе сдвигаем левый край</button>
+      <button class="opt text">Монотонный стек</button>
+      <button class="opt text">Двойной цикл по началу и концу — 10¹⁰ не так уж много</button>
+      <div class="explain">Подотрезок — непрерывный, значит, сортировать нельзя: порядок важен. Числа положительные — сумма окна растёт при расширении и падает при сужении, поэтому левый край никогда не надо двигать назад: O(n). Будь числа отрицательными, окно бы сломалось — тогда нужны префиксные суммы и упорядоченная структура или монотонная очередь.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как решать задачу на собеседовании</h2>
+      <p class="lead">Оценивают не только ответ, но и ход мысли. Интервьюер помогает тому, кто думает вслух, и не может помочь тому, кто молча пишет код.</p>
+      <p class="note">Пройдите по шагам на классической задаче Two Sum. Не пропускайте перебор: он показывает, что вы поняли задачу, и даёт точку отсчёта для оптимизации.</p>
+    </div>
+    <div class="demo" data-demo="interview"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как готовиться</h2>
+    <div class="fit">
+      <div class="fit-col">
+        <h3>Работает</h3>
+        <ul>
+          <li>Идти по списку паттернов: 15–20 приёмов по 5–8 задач — это 100–150 задач, а не 1000.</li>
+          <li>После каждой задачи записать признак: «по чему я должен был узнать приём».</li>
+          <li>Решать с таймером 30–40 минут, вслух. Не вышло — читать разбор и через неделю решать заново.</li>
+          <li>Проговаривать сложность по времени и памяти до того, как спросят.</li>
+          <li>Пара пробных собеседований с живым человеком.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не работает</h3>
+        <ul>
+          <li>Решать случайные задачи подряд и считать количество.</li>
+          <li>Сразу смотреть ответ, «понимать» и идти дальше.</li>
+          <li>Зубрить код решений: на собеседовании задачу чуть изменят.</li>
+          <li>Молча писать код с первой минуты, не уточнив условия.</li>
+          <li>Игнорировать граничные случаи: пустой ввод, один элемент, дубликаты, переполнение.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Случайный O(n²) в продакшене</h2>
+      <ul class="points">
+        <li><b>N+1 запросов</b>: ORM лениво грузит связь в цикле — 1 запрос за списком и ещё по одному на каждый элемент. Лечится <code>select_related</code>/<code>prefetch_related</code>, <code>joinedload</code>, <code>JOIN FETCH</code>, <code>WHERE id IN (…)</code>.</li>
+        <li><b>Вложенный цикл по спискам</b>: «для каждого заказа найти пользователя» через <code>next(u for u in users …)</code>. Постройте <code>dict</code> по id один раз.</li>
+        <li><b><code>list.remove</code> / <code>x in list</code> в цикле</b>: невидимый второй цикл. На тестовых 100 строках незаметно, на 10⁵ в проде — минуты.</li>
+      </ul>
+      <p class="note">Двигайте размер данных и задержку до базы.</p>
+    </div>
+    <div class="demo" data-demo="nplus1"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li><b>Тест удвоения</b>: запустите на <i>n</i> и <i>2n</i>. Время ×2 — линейно, ×4 — квадратично, ×8 — куб.</li>
+        <li><b>Профилировщик</b>: <code>py-spy top --pid</code>, <code>py-spy record -o flame.svg</code>, <code>cProfile</code>; Go — <code>pprof</code>; Java — async-profiler, JFR; Node — <code>--cpu-prof</code>, Chrome DevTools. Ищите широкую полку с <code>list.remove</code>, <code>__contains__</code>, <code>index</code>, <code>includes</code>.</li>
+        <li><b>Число запросов к базе</b> на одну страницу: django-debug-toolbar, <code>echo=True</code> в SQLAlchemy, <code>calls</code> в <code>pg_stat_statements</code>.</li>
+      </ul>
+      <p class="note">Справа — настоящий замер в вашем браузере: удаление дублей через <code>Array.includes</code> и через <code>Set</code>.</p>
+    </div>
+    <div class="demo" data-demo="doubling"></div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>O-нотация — про рост, а не про скорость. Константы, кэш и малые <i>n</i> решают на практике.</li>
+      <li>Около 10⁸ простых шагов в секунду (Python — 10⁶–10⁷). Ограничения задачи подсказывают нужную сложность.</li>
+      <li>Амортизированный O(1) — это рост ёмкости в разы. Рекурсия тратит память стека: O(глубины).</li>
+      <li>Знайте цену встроенных операций: <code>pop(0)</code>, <code>in</code> по списку, срезы и склейка строк — источник случайного O(n²).</li>
+      <li>Два указателя, окно, префиксы, бинпоиск по ответу и монотонный стек превращают O(n²) в O(n) или O(n log n).</li>
+      <li>На собеседовании: уточнить → примеры → перебор → оптимизация → код → тесты → сложность.</li>
+    </ul>
+    <p class="proverb">Сначала правильно, потом быстро — но квадрат замечайте сразу.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a> &nbsp; <a class="btn back-link" href="/arrays-hashing/">Дальше: массивы и хеширование →</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-patterns.js"></script>
+</body>
+</html>

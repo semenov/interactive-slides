@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Разбор задач: сокращатель ссылок, rate limiter, лента, чат — интерактивная презентация</title>
+  <meta name="description" content="Четыре классические задачи системного дизайна по шагам интервью: требования, оценки, API, данные, схема, углубление и компромиссы.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero" aria-hidden="true">
+      <div class="hero-tile">
+        <svg viewBox="0 0 64 40"><rect x="4" y="12" width="26" height="16" rx="8" fill="none" stroke="currentColor" stroke-width="4"/><rect x="34" y="12" width="26" height="16" rx="8" fill="none" stroke="currentColor" stroke-width="4"/><path d="M22 20h20" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>
+        <code>sho.rt/aZ3kP9q</code>
+      </div>
+      <div class="hero-tile">
+        <svg viewBox="0 0 64 40"><path d="M10 8h44l-6 28H16z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><circle cx="24" cy="26" r="4"/><circle cx="34" cy="28" r="4"/><circle cx="43" cy="24" r="4"/><circle cx="29" cy="18" r="4" opacity="0.4"/></svg>
+        <code>429 Too Many</code>
+      </div>
+      <div class="hero-tile">
+        <svg viewBox="0 0 64 40"><rect x="10" y="4" width="44" height="9" rx="3"/><rect x="10" y="16" width="44" height="9" rx="3" opacity="0.65"/><rect x="10" y="28" width="44" height="9" rx="3" opacity="0.35"/></svg>
+        <code>fan-out ×10⁸</code>
+      </div>
+      <div class="hero-tile">
+        <svg viewBox="0 0 64 40"><path d="M6 6h34a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H18l-8 7v-7H6a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z" /><path d="M58 14H48v14a4 4 0 0 1-4 4H30v2a4 4 0 0 0 4 4h16l8 5v-5a4 4 0 0 0 4-4V18a4 4 0 0 0-4-4z" opacity="0.45"/></svg>
+        <code>seq 41 ✓✓</code>
+      </div>
+    </div>
+    <div class="stack">
+      <h1>Разбор задач: ссылки, лимиты, лента, чат</h1>
+      <p class="lead">Четыре классические задачи системного дизайна — по шагам настоящего интервью: требования, оценки, API, данные, схема, углубление, узкие места. С числами и компромиссами.</p>
+      <p class="note">Серия «Системный дизайн», часть 5. Понятия из <a href="/sd-approach/">подхода</a>, <a href="/sd-scaling/">масштабирования</a>, <a href="/sd-data/">данных</a> и <a href="/sd-distributed/">распределённых систем</a> здесь применяются, а не объясняются заново. Листайте ← →, свайпом или кнопками внизу.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Один и тот же порядок для любой задачи</h2>
+    <p class="lead">На интервью 45 минут. Кандидаты чаще всего проваливаются не на знаниях, а на порядке: рисуют Kafka до того, как узнали, сколько будет запросов. Подробно о каждом шаге — в <a href="/sd-approach/">первой части серии</a>.</p>
+    <div class="flow" role="list">
+      <div class="fl" role="listitem" style="--w:5"><b>1</b><span>Требования</span><small>что делает, какой масштаб, что вне рамок</small><i>5 мин</i></div>
+      <div class="fl" role="listitem" style="--w:4"><b>2</b><span>Оценки</span><small>QPS, объём, пики</small><i>4 мин</i></div>
+      <div class="fl" role="listitem" style="--w:3"><b>3</b><span>API</span><small>3–5 методов</small><i>3 мин</i></div>
+      <div class="fl" role="listitem" style="--w:3"><b>4</b><span>Данные</span><small>сущности, ключи, доступ</small><i>3 мин</i></div>
+      <div class="fl" role="listitem" style="--w:10"><b>5</b><span>Схема</span><small>простая и целиком рабочая</small><i>10 мин</i></div>
+      <div class="fl" role="listitem" style="--w:15"><b>6</b><span>Углубление</span><small>2–3 самых трудных места</small><i>15 мин</i></div>
+      <div class="fl" role="listitem" style="--w:5"><b>7</b><span>Узкие места</span><small>отказы, компромиссы, что дальше</small><i>5 мин</i></div>
+    </div>
+    <p class="note">Каждая задача ниже проходит эти шаги. Цифры — порядки величин, а не точные значения: на интервью важнее, какие выводы вы из них сделали.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">Задача 1 · сокращатель ссылок</span>
+      <h2>Требования и оценки</h2>
+      <ul class="points">
+        <li>Функции: создать короткую ссылку (можно свой алиас и срок жизни), перейти по ней, посмотреть статистику.</li>
+        <li>Нефункциональные: редирект за десятки миллисекунд, доступность 99,99%, ключи нельзя угадать перебором.</li>
+        <li>Чтений в сотни раз больше, чем записей. Ссылку не меняют и почти не удаляют.</li>
+      </ul>
+      <p class="note">Двигайте ползунки. Выводы из чисел: запись — копейки, чтение надо кэшировать, а общий объём через несколько лет уже не влезет в один сервер.</p>
+    </div>
+    <div class="demo" data-demo="shortcalc"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>API и модель данных</h2>
+      <ul class="points">
+        <li>Горячий запрос один — «дай <code>long_url</code> по ключу». Ни соединений, ни диапазонов: это key-value.</li>
+        <li>Свой алиас живёт в том же пространстве ключей: только вставка «если нет» (<code>ON CONFLICT DO NOTHING</code>, <code>IF NOT EXISTS</code>), иначе два пользователя получат один алиас.</li>
+        <li>Одинаковые длинные ссылки обычно не склеивают: у разных владельцев своя статистика и срок жизни.</li>
+        <li>Клики — отдельный поток событий, а не <code>UPDATE counter</code>: строка вирусной ссылки стала бы точкой конкуренции.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+POST /api/v1/links
+  {"url": "https://…", "alias": "sale",
+   "expires_at": "2027-01-01"}
+  → 201 {"short": "https://sho.rt/aZ3kP9q"}
+
+GET    /{key}  → 302 Location: https://…
+                 404, если нет или просрочена
+GET    /api/v1/links/{key}/stats?from=…&amp;to=…
+DELETE /api/v1/links/{key}
+
+# links (KV, шард по key)
+key PK │ long_url │ owner_id │ created_at │ expires_at
+
+# clicks: Kafka → ClickHouse
+key │ ts │ country │ referrer │ user_agent
+</code></pre>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Где взять уникальный ключ</h2>
+      <ul class="points">
+        <li><b>Хеш URL</b> (MD5/xxhash → base62 → первые 7 символов): без координации, но каждая вставка проверяет коллизию, а одинаковые URL дают одинаковый ключ.</li>
+        <li><b>Счётчик + base62</b>: коллизий нет, но счётчик — общая точка, и ключи идут подряд: соседние ссылки легко перебрать.</li>
+        <li><b>Диапазоны</b>: сервер берёт у координатора блок из 1000 номеров и раздаёт их локально. Одно обращение на 1000 ссылок; упал сервер — остаток блока пропал, это не страшно.</li>
+      </ul>
+      <p class="note">Выберите способ и создавайте ссылки на разных серверах. Уроните сервер B.</p>
+    </div>
+    <div class="demo" data-demo="keygen"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Длина ключа и парадокс дней рождения</h2>
+      <p class="lead">Base62 — это <code>[0-9a-zA-Z]</code>: 62⁷ ≈ 3,5 трлн ключей. Кажется, что хватит надолго. Но если ключи случайные (хеш), первая коллизия ждёт не через триллион ссылок, а примерно через √(π·N/2) — около 2,4 млн.</p>
+      <p class="note">Поэтому при хеше проверка коллизий обязательна, а при счётчике или диапазонах не нужна вовсе. Введите номер — увидите base62. Двигайте длину ключа и число ссылок.</p>
+    </div>
+    <div class="demo" data-demo="birthday"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>301 или 302 и где считать клики</h2>
+      <ul class="points">
+        <li><b>301 Moved Permanently</b> браузер кэширует: повторные переходы не доходят до сервера. Меньше нагрузки — но вы не видите кликов и не можете поменять цель.</li>
+        <li><b>302 Found</b> (или 307) — каждый переход приходит к вам. Это выбор bit.ly и почти всех, кому нужна аналитика.</li>
+        <li>Клик пишется асинхронно: событие в Kafka, агрегаты в ClickHouse. Редирект не ждёт записи статистики.</li>
+      </ul>
+      <p class="note">Переключите код ответа и покликайте одним и тем же пользователем. Потом поменяйте цель ссылки.</p>
+    </div>
+    <div class="demo" data-demo="redirect"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Горячие ссылки и выбор базы</h2>
+      <p class="lead">Популярность ссылок подчиняется закону Ципфа: малая доля ссылок собирает почти все клики. Небольшой кэш снимает с базы основную нагрузку.</p>
+      <ul class="points">
+        <li>Кэш: Redis/Memcached перед базой, LRU, плюс CDN или кэш на балансировщике для самых горячих ключей.</li>
+        <li>База: миллиарды строк, доступ только по ключу — DynamoDB, Cassandra или шардированный Postgres с шардом по хешу ключа. <a href="/sd-data/">Подробнее о шардировании</a>.</li>
+        <li>Узкое место — не база, а вирусная ссылка, которую разом открыл миллион человек: её спасает кэш на краю, а не шардинг.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="zipfcache"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Ключи выдаёт счётчик: <code>base62(id)</code>. Безопасник говорит: «Я открыл <code>sho.rt/aZ3kP9q</code>, потом <code>aZ3kP9r</code> — и попал в чужой приватный документ». Что делать?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Перейти на хеш URL: он случайный</button>
+      <button class="opt text" data-correct>Пропустить номер через обратимую перестановку (например, шифр Фейстеля на 41 бит) перед base62</button>
+      <button class="opt text">Добавить к ключу текущее время</button>
+      <button class="opt text">Удлинить ключ до 10 символов</button>
+      <div class="explain">Биективная перестановка сохраняет уникальность счётчика — коллизий по-прежнему нет, проверка не нужна, — но соседние номера дают непохожие ключи. 41 бит ≈ 2,2 трлн номеров — меньше 62⁷, так что это всё ещё 7 символов base62. Хеш вернул бы проверку коллизий, время в ключе — та же предсказуемость, а длина без перемешивания ничего не меняет: <code>…0001</code>, <code>…0002</code>. Для приватных ссылок ещё и длиннее ключ, и проверка прав.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">Задача 2 · распределённый rate limiter</span>
+      <h2>Требования и алгоритмы</h2>
+      <p class="lead">Лимиты по ключу (пользователь, API-ключ, IP) и правилу — «100 в минуту и 1000 в час». Общие для всех N шлюзов, накладные расходы меньше миллисекунды, ответ <code>429</code> с <code>Retry-After</code> и <code>X-RateLimit-Remaining</code>.</p>
+      <p class="note">Лимит здесь — 10 запросов за 10 секунд. Выберите поток запросов и алгоритм: зелёные пропущены, красные получили 429. Особенно интересен всплеск на границе окна.</p>
+    </div>
+    <div class="demo" data-demo="rlalgos"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Token bucket в Redis: только атомарно</h2>
+<pre class="code"><code class="lang-plain">
+-- KEYS[1] = rl:{user}:api
+-- ARGV: ёмкость, жетонов в секунду, цена
+local cap, rate = tonumber(ARGV[1]), tonumber(ARGV[2])
+local cost = tonumber(ARGV[3])
+local t = redis.call('TIME')      -- часы Redis
+local now = t[1] * 1000 + t[2] / 1000
+local b = redis.call('HMGET', KEYS[1], 'tok', 'ts')
+local tok = tonumber(b[1]) or cap
+local ts = tonumber(b[2]) or now
+tok = math.min(cap, tok + (now - ts) * rate / 1000)
+local ok = tok &gt;= cost
+if ok then tok = tok - cost end
+redis.call('HSET', KEYS[1], 'tok', tok, 'ts', now)
+redis.call('PEXPIRE', KEYS[1],
+           math.ceil(cap / rate * 1000))
+return ok and 1 or 0
+</code></pre>
+      <p class="note">Скрипт выполняется в Redis целиком, другие команды между его строками не вклиниваются. <code>{user}</code> — хеш-тег: в Redis Cluster все ключи пользователя попадут в один слот.</p>
+    </div>
+    <div class="demo" data-demo="race"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Локальный или глобальный лимит и что, если Redis упал</h2>
+      <ul class="points">
+        <li><b>Глобальный</b> через Redis точен, но добавляет поход по сети на каждый запрос и делает Redis критичным.</li>
+        <li><b>Локальный</b> — лимит/N на каждом шлюзе: без сети, но точен только при ровной балансировке и меняется при автомасштабировании.</li>
+        <li><b>При отказе</b>: fail open — пропускать всех (защита от злоупотреблений пропала), fail closed — отказывать всем (сами устроили простой). Практичный вариант — откатиться на локальные лимиты.</li>
+      </ul>
+      <p class="note">Клиент с лимитом 100 запросов в секунду. Меняйте число шлюзов, балансировку и режим, затем уроните Redis.</p>
+    </div>
+    <div class="demo" data-demo="rlfail"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Лимит «100 запросов в минуту» сделан фиксированным окном: <code>INCR rl:{user}:{минута}</code> + <code>EXPIRE 60</code>. Сколько запросов клиент может гарантированно провести за любые 60 секунд подряд?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">100</button>
+      <button class="opt text">101</button>
+      <button class="opt text" data-correct>200</button>
+      <button class="opt text">Неограниченно, если запросы идут из разных шлюзов</button>
+      <div class="explain">100 запросов в последнюю секунду одной минуты и ещё 100 в первую секунду следующей: два окна, каждое в пределах лимита, а за две секунды прошло 200. Скользящий счётчик (взвешенная сумма текущего и прошлого окна) снимает проблему почти бесплатно: два числа вместо одного. А разные шлюзы ничего не меняют — <code>INCR</code> атомарен и счётчик общий.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <span class="tech">Задача 3 · лента новостей</span>
+      <h2>Требования, оценки, данные</h2>
+      <ul class="points">
+        <li>Публикация поста, подписки, домашняя лента: посты тех, на кого подписан, новые сверху, с ранжированием и бесконечной прокруткой.</li>
+        <li>Лента открывается за 200 мс (p99). Новый пост может появиться у подписчиков через несколько секунд — eventual consistency здесь допустима.</li>
+        <li>Посты: <code>post_id</code> — 64-битный ID с временем внутри (Snowflake), сортируется по времени. Подписки — граф в обе стороны: «на кого я» и «кто на меня».</li>
+        <li>Медиа — в S3 за CDN, в ленте только ссылки.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <div class="stats big">
+        <div class="stat"><b>200 млн</b><span>активных пользователей в день</span></div>
+        <div class="stat"><b>1 200/с</b><span>новых постов (100 млн/день), пик ×3</span></div>
+        <div class="stat"><b>46 000/с</b><span>открытий ленты (20 на человека в день)</span></div>
+        <div class="stat"><b>200</b><span>подписок у типичного пользователя</span></div>
+        <div class="stat"><b>100 млн</b><span>подписчиков у крупнейших аккаунтов</span></div>
+        <div class="stat"><b>~1 КБ</b><span>пост без медиа → 100 ГБ в день</span></div>
+      </div>
+<pre class="code"><code class="lang-plain">
+POST /api/v1/posts  {"text", "media"}
+GET  /api/v1/feed?cursor=…&amp;limit=20
+     → {"items": […], "next_cursor": "…"}
+PUT  /api/v1/users/{id}/follow
+</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Fan-out: при записи, при чтении или гибрид</h2>
+      <ul class="points">
+        <li><b>При записи (push)</b>: пост сразу кладут в готовую ленту каждого подписчика. Чтение — один запрос, но пост знаменитости — 100 млн записей.</li>
+        <li><b>При чтении (pull)</b>: лента собирается при открытии из постов всех, на кого подписан. Записей нет, зато каждое чтение — сотни запросов и медленный хвост.</li>
+        <li><b>Гибрид</b>: push для обычных авторов, pull для аккаунтов выше порога. Так делали Twitter и Instagram.</li>
+      </ul>
+      <p class="note">Выберите стратегию и двигайте порог. Столбики — сколько постов в секунду публикуют авторы с таким числом подписчиков; закрашенные идут через push.</p>
+    </div>
+    <div class="demo" data-demo="fanout"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Хранение ленты, ранжирование, курсоры</h2>
+<pre class="code"><code class="lang-plain">
+# fan-out: каждому подписчику автора
+ZADD feed:{uid} {post_id} {post_id}
+ZREMRANGEBYRANK feed:{uid} 0 -801   # 800 последних
+# страница после курсора
+ZREVRANGEBYSCORE feed:{uid} ({cursor} -inf LIMIT 0 20
+</code></pre>
+      <ul class="points">
+        <li>В ленте только ID, тексты — пачкой из кэша постов. 800 ID × 8 Б × 200 млн = 1,3 ТБ, с накладными Redis в разы больше: это кластер. Неактивным ленту не строим.</li>
+        <li>Ранжирование: ~500 кандидатов → скор моделью → первые 20. Курсор тогда — непрозрачный токен.</li>
+      </ul>
+      <p class="note">Листайте ленту и добавляйте новые посты между страницами — сравните offset и курсор.</p>
+    </div>
+    <div class="demo" data-demo="cursor"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <span class="tech">Задача 4 · мессенджер</span>
+      <h2>Требования и оценки</h2>
+      <ul class="points">
+        <li>Личные и групповые чаты (до ~1000 участников), история, несколько устройств, статус «в сети», квитанции «доставлено» и «прочитано», пуши.</li>
+        <li>Задержка доставки — сотни миллисекунд. Порядок внутри чата один для всех участников. Ни одно подтверждённое сообщение не теряется.</li>
+        <li>Доставка как минимум один раз + дедупликация по <code>client_msg_id</code>: клиент повторяет отправку, пока не получил ack. См. <a href="/sd-distributed/">идемпотентность</a>.</li>
+      </ul>
+      <div class="stats">
+        <div class="stat"><b>500 млн</b><span>DAU, 40 сообщений в день</span></div>
+        <div class="stat"><b>230 тыс/с</b><span>сообщений в среднем, пик ~700 тыс</span></div>
+        <div class="stat"><b>200 млн</b><span>открытых WebSocket в пике</span></div>
+      </div>
+    </div>
+    <div class="stack">
+<pre class="code"><code class="lang-plain">
+→ send      {chat: 42, cid: "8f1e", body: "…"}
+← ack       {cid: "8f1e", seq: 1041}
+← msg       {chat: 42, seq: 1041, from: 7, body: "…"}
+→ delivered {chat: 42, seq: 1041}
+→ read      {chat: 42, seq: 1041}
+→ sync      {chats: {42: 1037, 77: 310}}
+</code></pre>
+      <p class="note">Один шлюз держит 0,5–1 млн простаивающих соединений (десятки КБ памяти на каждое) → 200–400 серверов. Хранить историю — 20 млрд × ~200 Б = 4 ТБ в день до репликации. WhatsApp хранит сообщение только до доставки, Telegram — всегда: это первый вопрос к интервьюеру.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Шлюзы и реестр соединений</h2>
+      <ul class="points">
+        <li>Клиент держит WebSocket с одним из шлюзов. Шлюз ничего не решает: принимает кадры и отдаёт их.</li>
+        <li>Реестр в Redis: <code>user → gateway</code> с TTL, который продлевает heartbeat. По нему сервис чата находит, куда отдать сообщение.</li>
+        <li>Сервис чата назначает <code>seq</code>, пишет в хранилище, только потом шлёт ack отправителю. Нет соединения — пуш через APNs/FCM, а сообщение заберут синхронизацией.</li>
+      </ul>
+      <p class="note">Отправляйте сообщения и смотрите путь по шагам. Отключите D, напишите ему, затем подключите снова.</p>
+    </div>
+    <div class="demo" data-demo="chatflow"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Порядок и квитанции: номер в чате</h2>
+      <ul class="points">
+        <li>Каждому сообщению сервис назначает <code>seq</code> — следующий номер в этом чате. Клиент показывает сообщения по <code>seq</code>, а не по времени прихода.</li>
+        <li>Дыра в номерах — сигнал: что-то потерялось или едет медленнее. Клиент ждёт, а потом просит <code>sync after=N</code>.</li>
+        <li>«Доставлено» и «прочитано» — это указатели «до какого <code>seq</code>», а не флаг на каждом сообщении: одна запись вместо тысячи.</li>
+      </ul>
+      <p class="note">Отправьте пачку сообщений: сеть доставит их вперемешку. Включите потери и посмотрите, как клиент обнаруживает дыру.</p>
+    </div>
+    <div class="demo" data-demo="seq"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Хранилище, группы и пуши</h2>
+<pre class="code"><code class="lang-sql">
+-- Cassandra / ScyllaDB
+CREATE TABLE messages (
+  chat_id   bigint,
+  bucket    int,     -- окно в 10 дней
+  seq       bigint,
+  sender_id bigint,
+  cid       uuid,    -- для дедупликации
+  body      blob,
+  PRIMARY KEY ((chat_id, bucket), seq)
+) WITH CLUSTERING ORDER BY (seq DESC);
+</code></pre>
+      <p class="note">Так хранит сообщения Discord: «последние 50 сообщений чата» — одно чтение подряд из одной партиции, а окно не даёт партиции расти вечно. Запись только дописывается — LSM-движку это идеально.</p>
+    </div>
+    <ul class="points">
+      <li><b>Откуда seq.</b> Все сообщения чата обрабатывает один владелец — шард сервиса по <code>chat_id</code> — и считает номера в памяти, восстанавливая счётчик из базы при переезде. Глобальный счётчик или LWT на каждое сообщение слишком дороги.</li>
+      <li><b>Группы.</b> Маленькая группа — fan-out при записи: сообщение уходит каждому онлайн-участнику, у офлайн растёт счётчик непрочитанного. Канал на 100 тыс. — fan-out при чтении, как знаменитости в ленте.</li>
+      <li><b>Пуши.</b> Нет соединения — событие в очередь пушей. Пачкуем и схлопываем («5 новых сообщений»), с шифрованием end-to-end текст в пуш не кладём.</li>
+      <li><b>Узкие места:</b> переподключение миллионов клиентов после падения шлюза (джиттер в повторах), огромные группы, горячие чаты.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В группе три участника пишут одновременно с разных шлюзов. Как сделать, чтобы все увидели сообщения в одном и том же порядке?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Сортировать по времени отправки на телефоне</button>
+      <button class="opt text">Сортировать по времени сервера, который принял сообщение</button>
+      <button class="opt text" data-correct>Назначать номер в одном месте для каждого чата — у владельца шарда по chat_id</button>
+      <button class="opt text">Сортировать по <code>client_msg_id</code></button>
+      <div class="explain">Часы телефонов врут на минуты, часы серверов расходятся на миллисекунды — и при одинаковых метках порядок не определён. Единственный источник порядка на чат даёт полный порядок дёшево: один чат — одна точка, а чатов миллионы, и они спокойно распределяются по шардам. Глобальный порядок между чатами никому не нужен.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Чего ждёт интервьюер</h2>
+    <ul class="points summary checklist">
+      <li>Уточнили требования и масштаб до первого квадратика. Назвали, что вне рамок.</li>
+      <li>Посчитали QPS, объём и пики — и сделали из чисел выводы: «чтение надо кэшировать», «в один сервер не влезет».</li>
+      <li>API и модель данных до схемы; ключ партиционирования выбран по тому, как данные читают.</li>
+      <li>Сначала простая и целиком рабочая схема, потом углубление в 2–3 трудных места: генерация ключей, атомарность лимита, fan-out, порядок сообщений.</li>
+      <li>Каждое решение — с альтернативой и ценой: 301/302, push/pull, fail open/closed, хранить историю или нет.</li>
+      <li>Отказы и узкие места: что будет, если упадёт Redis, шлюз, шард; вирусная ссылка, знаменитость, огромная группа.</li>
+      <li>Вы ведёте разговор, следите за временем и слышите подсказки интервьюера.</li>
+    </ul>
+    <p class="proverb">Правильного ответа нет. Есть обоснованные компромиссы.</p>
+    <p class="end-row"><a class="btn primary back-link" href="/">К списку презентаций</a> <span class="note">Дальше — <a href="/sd-cases-2/">вторая часть разборов</a>.</span></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Стек и куча — интерактивная презентация</title>
+  <meta name="description" content="Как программа раскладывает память: сегменты процесса, стек вызовов и соглашение о вызовах, переполнения стека и буфера, malloc и устройство аллокатора, значения и ссылки, escape-анализ.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-as" aria-hidden="true">
+      <div class="ha-row ha-kern">ядро</div>
+      <div class="ha-row ha-stack"><span>стек</span><i></i><i></i><i class="top"></i><em>↓ rsp</em></div>
+      <div class="ha-gap"></div>
+      <div class="ha-row ha-mmap"><span>mmap: libc.so, большие блоки</span></div>
+      <div class="ha-gap"></div>
+      <div class="ha-row ha-heap"><em>↑ brk</em><i></i><i class="free"></i><i></i><i></i><span>куча</span></div>
+      <div class="ha-row ha-seg"><b>.bss</b><b>.data</b><b>.rodata</b><b>.text</b></div>
+      <div class="ha-addr ha-hi">0x7fff…</div>
+      <div class="ha-addr ha-lo">0x5555…</div>
+    </div>
+    <div class="stack">
+      <h1>Стек и куча</h1>
+      <p class="lead">Как работает программа: где лежат переменные, что происходит при вызове функции, почему рекурсия падает, как устроен <code>malloc</code> и почему в Go, Java и Python одно и то же значение может стоить ноль наносекунд или сотню.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Адресное пространство процесса</h2>
+      <p class="lead">Каждый процесс видит одну и ту же картину: внизу код и глобальные данные из исполняемого файла, над ними растёт куча, наверху — стек главного потока, между ними — библиотеки и большие блоки через <code>mmap</code>.</p>
+      <p class="note">Нажмите на строку программы или на область карты. Адреса настоящие по форме, но с ASLR меняются при каждом запуске. Свою карту видно в <code>cat /proc/&lt;pid&gt;/maps</code>. Почему адреса виртуальные — в презентации про <a href="/virtual-memory/">виртуальную память</a>.</p>
+    </div>
+    <div class="demo" data-demo="layout"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Что сделает эта программа на Linux, собранная обычным <code>gcc</code>?</p>
+      <pre class="code"><code class="lang-c">int main(void) {
+    char *s = "hello";
+    s[0] = 'H';
+    puts(s);
+}</code></pre>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Напечатает «Hello»</button>
+      <button class="opt text">Напечатает «hello»: строка скопируется при присваивании</button>
+      <button class="opt text" data-correct>Упадёт с Segmentation fault</button>
+      <button class="opt text">Не скомпилируется</button>
+      <div class="explain">Литерал <code>"hello"</code> лежит в <code>.rodata</code>, а эта область отображена только на чтение (<code>r--p</code> в <code>/proc/pid/maps</code>). Запись в неё — аппаратное исключение и сигнал SIGSEGV. Компилятор пропускает код, потому что тип литерала в C — <code>char[]</code>, а не <code>const char[]</code>. Нужна изменяемая копия — пишите <code>char s[] = "hello";</code>: тогда массив окажется на стеке.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Стек вызовов</h2>
+      <ul class="points">
+        <li>Каждый вызов кладёт на стек <b>кадр</b>: адрес возврата, сохранённый указатель кадра вызывающего, локальные переменные.</li>
+        <li>Стек растёт вниз: регистр <code>rsp</code> уменьшается при вызове и возвращается при выходе. Освободить кадр — значит просто сдвинуть указатель.</li>
+        <li>Кадры строго вложены: выйти можно только из самого нижнего. Поэтому стек — идеальное место для данных, живущих не дольше функции.</li>
+      </ul>
+      <p class="note">Нажимайте «Шаг»: вызовы <code>sum_sq</code> и рекурсивный <code>fact</code>. Обратите внимание, что второй вызов <code>sq</code> занимает те же адреса, что и первый.</p>
+    </div>
+    <div class="demo" data-demo="callstack"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Соглашение о вызовах</h2>
+      <ul class="points">
+        <li>x86-64 System V (Linux, macOS): первые шесть целых аргументов — в <code>rdi</code>, <code>rsi</code>, <code>rdx</code>, <code>rcx</code>, <code>r8</code>, <code>r9</code>, вещественные — в <code>xmm0–7</code>, результат — в <code>rax</code>. В стек идут только остальные. На ARM64 — <code>x0–x7</code>.</li>
+        <li><code>call</code> кладёт адрес возврата, <code>ret</code> снимает его и прыгает туда.</li>
+        <li>Место под все локальные выделяет одна инструкция <code>sub rsp, N</code>. Вот почему локальные переменные «бесплатны»: их цена не зависит от количества.</li>
+      </ul>
+      <p class="note">Пройдите по инструкциям и следите за <code>rsp</code>, <code>rbp</code> и ячейками стека. Свой код так же смотрят в <code>objdump -d</code> или на godbolt.org.</p>
+    </div>
+    <div class="demo" data-demo="prologue"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Переполнение стека</h2>
+      <ul class="points">
+        <li>Стек конечен. В C ниже стека стоит защитная страница без прав доступа: дошли до неё — SIGSEGV.</li>
+        <li>Рантаймы проверяют глубину сами и бросают исключение: <code>StackOverflowError</code>, <code>RangeError</code>. Python считает не байты, а кадры: <code>sys.getrecursionlimit()</code> = 1000.</li>
+        <li>У горутины стек растущий, до 1 ГБ. Бесконечная рекурсия в Go — это фатальная ошибка, а не <code>panic</code>, её не поймать через <code>recover</code>.</li>
+      </ul>
+      <p class="note">Выберите рантайм и двигайте глубину рекурсии. Размер кадра зависит от числа локальных переменных — увеличьте его.</p>
+    </div>
+    <div class="demo" data-demo="overflow"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Стек у каждого потока</h2>
+      <ul class="points">
+        <li>Поток ОС получает стек фиксированного размера: в Linux по умолчанию 8 МБ (<code>ulimit -s</code>), в JVM — 1 МБ (<code>-Xss</code>). Это резерв адресов: физическая память выделяется только под затронутые страницы.</li>
+        <li>Горутина начинает с 2 КБ. Когда места не хватает, рантайм выделяет стек вдвое больше и копирует туда старый, поправляя указатели.</li>
+        <li>Поэтому миллион горутин — нормально, а миллион потоков — нет: дело не только в памяти, но и в лимитах ядра. Подробнее — в презентации про <a href="/processes-threads/">процессы и потоки</a>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="threads"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Java-сервис держит 2000 потоков с <code>-Xss1m</code>. Большинство из них ждут на сокете, глубина стека — пара десятков кадров. Сколько физической памяти занимают их стеки?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 2 ГБ: 2000 × 1 МБ</button>
+      <button class="opt text" data-correct>Десятки мегабайт</button>
+      <button class="opt text">Ноль: стеки потоков JVM лежат в куче</button>
+      <button class="opt text">Около 16 ГБ: ОС выделяет каждому по 8 МБ</button>
+      <div class="explain"><code>-Xss</code> резервирует адреса, а физическая страница появляется только при первом обращении. Неглубокий стек затрагивает несколько страниц по 4 КБ — 2000 потоков дадут порядка 20–60 МБ RSS. Виртуальная память (VSZ в <code>top</code>) при этом покажет 2 ГБ, и это не повод для паники. Смотрите RSS или <code>-XX:NativeMemoryTracking=summary</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Указатель на мёртвый кадр</h2>
+      <p class="lead">После выхода из функции её кадр никто не стирает: байты остаются на месте, пока следующий вызов не займёт те же адреса. Указатель на локальную переменную продолжает «работать» — до поры.</p>
+      <p class="note">Пройдите программу по шагам в C, а потом в Go. Современный GCC с <code>-O2</code> вообще подменяет такой адрес на <code>NULL</code> и выдаёт предупреждение. Rust подобный код не скомпилирует.</p>
+    </div>
+    <div class="demo" data-demo="dangling"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Переполнение буфера на стеке</h2>
+      <ul class="points">
+        <li>Массив на стеке лежит рядом с адресом возврата. Запись за его конец без проверки длины портит соседние данные, и <code>ret</code> уходит по мусорному адресу.</li>
+        <li>Это классическая уязвимость, поэтому защита стоит в несколько слоёв: <b>канарейка</b> (<code>-fstack-protector-strong</code>) — случайное значение перед адресом возврата, проверяется при выходе; <b>NX</b> — стек нельзя исполнять; <b>ASLR</b> — адреса случайны при каждом запуске; <b>теневой стек</b> (Intel CET) хранит копию адресов возврата.</li>
+        <li>В Go, Java, Python и JS выход за границы массива — исключение или <code>panic</code>, а не порча памяти.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="smash"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Стек или куча</h2>
+    <div class="fit">
+      <div class="fit-col">
+        <h3>Стек</h3>
+        <ul>
+          <li>Выделение и освобождение — сдвиг <code>rsp</code>, одна инструкция на всю функцию<span class="alt">ничего не ищет, не блокирует, не фрагментируется</span></li>
+          <li>Вершина стека почти всегда в кэше L1</li>
+          <li>Время жизни — строго до выхода из функции<span class="alt">размер обычно должен быть известен при компиляции</span></li>
+          <li>Мал: килобайты–мегабайты на поток</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Куча</h3>
+        <ul>
+          <li>Произвольное время жизни и размер: объект можно вернуть, передать другому потоку, положить в кэш</li>
+          <li><code>malloc</code> ищет подходящий блок: 20–100 нс в быстром пути, микросекунды, если нужен системный вызов</li>
+          <li>Кто-то должен освободить: программист (<code>free</code>), подсчёт ссылок или сборщик мусора</li>
+          <li>Объекты разбросаны по памяти — больше промахов кэша</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как работает <code>malloc</code></h2>
+      <ul class="points">
+        <li>Куча — большой кусок памяти, полученный у ОС через <code>brk</code> или <code>mmap</code>. Аллокатор режет его на блоки, у каждого — заголовок с размером и флагом «занят».</li>
+        <li>Свободные блоки связаны в список. <b>First fit</b> берёт первый подходящий и <b>отрезает</b> от него нужное.</li>
+        <li><code>free</code> возвращает блок в список и <b>склеивает</b> его со свободными соседями. Без склейки память дробится на крошки.</li>
+      </ul>
+      <p class="note">Выделяйте и освобождайте блоки. Потом нажмите «Сценарий»: много мелких блоков, каждый второй освобождён — свободно половина кучи, а 200 байт уже не выделить.</p>
+    </div>
+    <div class="demo" data-demo="allocator"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Классы размеров и кэши потоков</h2>
+      <ul class="points">
+        <li>Список свободных блоков — медленно и плохо для многопоточности. Современные аллокаторы (tcmalloc, jemalloc, mimalloc, рантайм Go) округляют размер до <b>класса</b> и держат для каждого класса отдельные страницы с блоками одного размера.</li>
+        <li>У каждого потока свой кэш таких блоков — быстрый путь без блокировок. В Go это <code>mcache</code> на каждом P, в glibc — <code>tcache</code>.</li>
+        <li>Большие блоки идут сразу к ОС через <code>mmap</code> — это системный вызов и обнуление страниц.</li>
+      </ul>
+      <p class="note">Двигайте размер запроса и смотрите, куда он попадёт и сколько байт пропадёт на округлении.</p>
+    </div>
+    <div class="demo" data-demo="sizeclass"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Значения и ссылки</h2>
+      <p class="lead">Массив значений — один непрерывный кусок памяти. Массив ссылок — массив указателей плюс отдельный объект в куче на каждый элемент: больше выделений, заголовки объектов, прыжки по памяти при обходе.</p>
+      <p class="note">Сравните миллион точек <code>(x, y)</code> в разных языках. В Java объекты с заголовком 12 байт, в Python каждое число — отдельный объект. Для чисел берите <code>array</code>/NumPy, в JS — <code>Float64Array</code>.</p>
+    </div>
+    <div class="demo" data-demo="values"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Escape-анализ</h2>
+      <ul class="points">
+        <li>В Go вы не выбираете между стеком и кучей — выбирает компилятор. Если значение может пережить функцию («убегает»), оно уходит в кучу. Иначе — на стек, даже если создано через <code>new</code> или <code>&amp;T{}</code>.</li>
+        <li>Решения показывает <code>go build -gcflags=-m</code>.</li>
+        <li>JIT в JVM делает то же для горячего кода: объект, который не покидает метод, разбирается на поля в регистрах (scalar replacement).</li>
+      </ul>
+      <p class="note">Угадайте для каждого фрагмента, где окажется значение.</p>
+    </div>
+    <div class="demo" data-demo="escape"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Цена роста</h2>
+      <ul class="points">
+        <li>Динамический массив при переполнении выделяет новый, больший, и копирует всё старое. Старый становится мусором.</li>
+        <li>Go удваивает ёмкость до 256 элементов, потом растёт примерно в 1,25 раза и округляет до класса размера. Python добавляет около ⅛.</li>
+        <li>Знаете размер — выделите сразу: <code>make([]T, 0, n)</code>, <code>new ArrayList&lt;&gt;(n)</code>, <code>strings.Builder.Grow</code>.</li>
+      </ul>
+      <p class="note">Двигайте число элементов и включите предварительное выделение.</p>
+    </div>
+    <div class="demo" data-demo="grow"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Программа на C выделила 2 ГБ объектов по 100 байт, а потом освободила 95% из них вперемешку. Что покажет RSS процесса в <code>top</code>?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 100 МБ: <code>free</code> сразу возвращает память ОС</button>
+      <button class="opt text" data-correct>Почти те же 2 ГБ</button>
+      <button class="opt text">Около 1 ГБ: ОС заберёт половину</button>
+      <button class="opt text">Ноль: освобождённую память забирает ядро</button>
+      <div class="explain">Мелкие блоки остаются в списках аллокатора для повторного использования. Вернуть ОС можно только целые страницы, а уцелевшие 5% объектов разбросаны по всем страницам — почти каждая страница всё ещё занята. Это фрагментация. Помогают <code>malloc_trim</code>, jemalloc и mimalloc, которые активнее возвращают память, и арены или пулы для объектов с общим временем жизни. Языки со сборкой мусора решают это уплотнением — об этом в презентации про <a href="/memory-management/">управление памятью</a>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как уменьшить выделения</h2>
+      <ul class="points">
+        <li>Заранее выделяйте ёмкость и переиспользуйте буферы между запросами: <code>buf = buf[:0]</code>, <code>sync.Pool</code>, пулы объектов.</li>
+        <li>Храните значения, а не указатели: <code>[]T</code> вместо <code>[]*T</code>, массивы примитивов вместо коллекций обёрток (<code>int[]</code>, а не <code>List&lt;Integer&gt;</code>).</li>
+        <li>Не упаковывайте лишний раз: в Go передача в <code>interface{}</code> (и <code>fmt.Sprintf</code>) часто означает выделение, в Java — автоупаковка <code>int</code> → <code>Integer</code>.</li>
+        <li>Python: <code>__slots__</code> убирает словарь у каждого объекта, генераторы не создают промежуточных списков, числа держите в NumPy.</li>
+        <li>Сначала измерьте: оптимизировать стоит только горячий путь.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <pre class="code"><code>// было: новый буфер на каждый запрос
+func handle(w io.Writer, r *Req) {
+    buf := make([]byte, 0, 4096) // уходит в кучу
+    buf = r.AppendTo(buf)
+    w.Write(buf)
+}
+
+// стало: буферы переиспользуются
+var bufPool = sync.Pool{New: func() any {
+    b := make([]byte, 0, 4096)
+    return &amp;b
+}}
+
+func handle(w io.Writer, r *Req) {
+    bp := bufPool.Get().(*[]byte)
+    buf := r.AppendTo((*bp)[:0])
+    w.Write(buf)
+    *bp = buf
+    bufPool.Put(bp)
+}</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li>Карта памяти: <code>/proc/&lt;pid&gt;/maps</code>, <code>pmap -x</code>; размер стека — <code>ulimit -s</code>.</li>
+        <li>Go: <code>-gcflags=-m</code>, <code>go test -benchmem</code> (allocs/op), профиль <code>alloc_space</code> в pprof.</li>
+        <li>Python: <code>tracemalloc</code> — какие строки кода выделяют больше всего.</li>
+        <li>Node и браузер: снимок кучи и Allocation sampling в Chrome DevTools (<code>node --inspect</code>).</li>
+        <li>Java: JFR (<code>jdk.ObjectAllocationSample</code>), async-profiler <code>-e alloc</code>.</li>
+        <li>C/C++: <code>-fsanitize=address</code> ловит выход за границы и висячие указатели, heaptrack и valgrind показывают выделения.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <pre class="code"><code class="lang-plain">$ go build -gcflags=-m ./...
+./user.go:12:9: &amp;User{...} escapes to heap
+./user.go:20:13: ... argument does not escape
+
+$ go test -bench=Parse -benchmem
+BenchmarkParse-8  1854213  642 ns/op
+                 320 B/op  6 allocs/op
+
+$ go test -bench=Parse -memprofile=mem.out
+$ go tool pprof -sample_index=alloc_space mem.out</code></pre>
+      <pre class="code"><code class="lang-py">import tracemalloc
+tracemalloc.start()
+run()
+snap = tracemalloc.take_snapshot()
+for s in snap.statistics("lineno")[:5]:
+    print(s)   # файл:строка, байты, число блоков</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Процесс — это код и глобальные данные из файла, куча, отображённые библиотеки и стек на каждый поток.</li>
+      <li>Стек — кадры вызовов. Выделение на нём бесплатно, но живёт только до выхода из функции и ограничено по размеру.</li>
+      <li>Аргументы идут в регистрах, адрес возврата — на стеке рядом с локальными массивами. Отсюда переполнения и слои защиты.</li>
+      <li>Куча — аллокатор с классами размеров и кэшами потоков. Это быстро, но не бесплатно, и память дробится.</li>
+      <li>Значения дешевле ссылок. В Go и JVM компилятор сам переносит неубегающие объекты на стек.</li>
+      <li>Меряйте выделения профилировщиком, прежде чем оптимизировать. Кто убирает мусор из кучи — в <a href="/memory-management/">следующей презентации</a>.</li>
+    </ul>
+    <p class="proverb">Самое быстрое выделение памяти — то, которого не было.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos-stack.js"></script>
+<script src="demos-heap.js"></script>
+</body>
+</html>

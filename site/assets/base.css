@@ -35,22 +35,24 @@ body {
 }
 h1, h2, h3 { margin: 0; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
 p { margin: 0; }
-a { color: var(--go-deep); }
-:focus-visible { outline: 3px solid var(--go); outline-offset: 2px; }
+a { color: var(--accent-deep); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-code, .val, .gchip, .mchip, .pchip, .opt, .sel-code {
+/* JetBrains Mono would turn <= into ≤ etc.; turn ligatures off wherever the mono font can appear */
+pre, code, kbd, samp, .val, .gchip, .mchip, .pchip, .opt, .sel-code {
   font-variant-ligatures: none;
   font-feature-settings: "calt" 0, "liga" 0;
 }
 code {
   font-family: var(--mono);
   font-size: 0.86em;
-  background: var(--go-soft);
+  background: var(--accent-soft);
   padding: 0.08em 0.35em;
   border-radius: 4px;
 }
 pre.code {
   margin: 0;
+  font-family: var(--mono);
   background: var(--ink);
   color: #e3ecf3;
   border-radius: var(--r-m);
@@ -62,7 +64,7 @@ pre.code {
 pre.code code { background: none; padding: 0; font-size: inherit; color: inherit; }
 .code .k { color: #5dc9e2; }
 .code .s { color: #9ee6c9; }
-.code .c { color: #8aa0b4; font-style: italic; }
+.code .c { color: #8aa0b4; font-style: normal; } /* the mono font has no italic: Cyrillic would fall back to a serif */
 .code .n { color: #f7a8c0; }
 .code .op { color: var(--value); font-weight: 700; }
 
@@ -79,11 +81,11 @@ pre.code code { background: none; padding: 0; font-size: inherit; color: inherit
   cursor: pointer;
   touch-action: manipulation;
 }
-.btn:hover:not(:disabled) { background: var(--go-soft); }
+.btn:hover:not(:disabled) { background: var(--accent-soft); }
 .btn.primary { background: var(--ink); color: #fff; }
-.btn.primary:hover:not(:disabled) { background: var(--go-deep); border-color: var(--go-deep); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-deep); border-color: var(--accent-deep); }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.btn code { background: none; padding: 0; color: inherit; font-size: 0.95em; }
+.btn code, .deck .btn code { background: none; padding: 0; color: inherit; font-size: 0.95em; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
@@ -110,6 +112,11 @@ pre.code code { background: none; padding: 0; font-size: inherit; color: inherit
 .talk .talk-meta { font-size: 0.85em; margin-top: 10px; color: var(--ink); }
 .talk-art { width: 112px; aspect-ratio: 1; border-radius: var(--r-m); background: var(--ink); display: grid; place-items: center; }
 .talk-art svg { width: 76%; }
+.home-section { margin-top: clamp(48px, 8vw, 88px); }
+.home-section > h2 { font-size: clamp(1.7rem, 2vw + 1rem, 2.5rem); }
+.home-section > p { margin-top: 8px; color: var(--muted); max-width: 60ch; }
+.home-section .talks { margin-top: 20px; }
+.talk-step { font-family: var(--mono); font-weight: 700; color: var(--muted); margin-right: 0.4em; }
 .home-foot { margin-top: 48px; font-size: 0.88em; color: var(--muted); }
 @media (max-width: 520px) {
   .talk { grid-template-columns: 72px minmax(0, 1fr); align-items: start; }

@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Распределённые системы: сбои, ретраи, очереди, консенсус — интерактивная презентация</title>
+  <meta name="description" content="Частичные отказы, таймауты, ретраи с джиттером, идемпотентность, circuit breaker, семантика доставки, outbox, саги, часы Лэмпорта, Raft и fencing-токены.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-net" aria-hidden="true">
+      <svg viewBox="0 0 340 300">
+        <line x1="80" y1="70" x2="260" y2="70" class="hn-link"/>
+        <line x1="80" y1="70" x2="170" y2="230" class="hn-link"/>
+        <line x1="260" y1="70" x2="170" y2="230" class="hn-link broken"/>
+        <circle cx="170" cy="70" r="7" class="hn-pkt"/>
+        <circle cx="125" cy="150" r="7" class="hn-pkt"/>
+        <g class="hn-cut" transform="translate(215 150)"><circle r="17"/><text y="7">?</text></g>
+        <g class="hn-node lead" transform="translate(80 70)"><rect x="-48" y="-30" width="96" height="60" rx="10"/><text y="-4">S1</text><text y="16" class="sm">лидер · term 7</text></g>
+        <g class="hn-node" transform="translate(260 70)"><rect x="-48" y="-30" width="96" height="60" rx="10"/><text y="-4">S2</text><text y="16" class="sm">ведомый</text></g>
+        <g class="hn-node" transform="translate(170 230)"><rect x="-48" y="-30" width="96" height="60" rx="10"/><text y="-4">S3</text><text y="16" class="sm">ведомый</text></g>
+      </svg>
+    </div>
+    <div class="stack">
+      <h1>Распределённые системы</h1>
+      <p class="lead">Сбои, ретраи, очереди, консенсус. Что делать, когда запрос завис и неизвестно, выполнился ли он; как не положить сервис ретраями; как доставить событие ровно один раз «по смыслу» и как узлы договариваются, кто главный.</p>
+      <p class="note">Четвёртая часть серии «Системный дизайн». Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Восемь заблуждений о сети</h2>
+    <p class="lead">Список Питера Дойча (Sun, 1994). Каждый пункт — источник реальных инцидентов: код, написанный «как для одной машины», ломается именно на них.</p>
+    <div class="fallacies">
+      <div class="fl"><b>Сеть надёжна</b><span>Пакеты теряются, соединения рвутся посреди запроса. Отсюда таймауты, ретраи и идемпотентность.</span></div>
+      <div class="fl"><b>Задержка нулевая</b><span>Внутри ДЦ ~0,5 мс, между регионами 60–150 мс. 100 последовательных вызовов — уже секунды.</span></div>
+      <div class="fl"><b>Пропускная способность бесконечна</b><span>Ответ на 5 МБ × 1000 rps — это 40 Гбит/с. Пагинация и сжатие.</span></div>
+      <div class="fl"><b>Сеть безопасна</b><span>mTLS между сервисами, а не доверие «потому что внутри VPC».</span></div>
+      <div class="fl"><b>Топология не меняется</b><span>Поды переезжают, IP меняются, DNS кэшируется дольше, чем живёт адрес.</span></div>
+      <div class="fl"><b>Администратор один</b><span>Чужой балансировщик, чужой файрвол и чужое окно обслуживания.</span></div>
+      <div class="fl"><b>Передача бесплатна</b><span>Сериализация стоит CPU, межзонный трафик в облаке — денег.</span></div>
+      <div class="fl"><b>Сеть однородна</b><span>Разные версии протоколов, MTU, таймауты прокси по пути.</span></div>
+    </div>
+    <p class="note">Главное следствие: у удалённого вызова не два исхода, а три — «успех», «ошибка» и «неизвестно». Про сам TCP и сокеты — в презентации <a href="/networking/">«Сеть: от пакета до сокета»</a>.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Частичный отказ: таймаут — а запрос выполнился?</h2>
+      <p class="lead">Клиент отправил «списать 1000 ₽» и через 2 секунды получил таймаут. Это может значить три разные вещи: запрос не дошёл, сервер его выполнил, но ответ потерялся, или сервер ещё работает и выполнит его позже.</p>
+      <p class="note">Отправляйте запросы в разных сценариях. Клиент во всех неудачных случаях видит одно и то же — таймаут, а на сервере деньги то списаны, то нет.</p>
+    </div>
+    <div class="demo" data-demo="partial"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Таймауты: как выбрать</h2>
+      <ul class="points">
+        <li>Таймаут нужен всегда. Без него медленная зависимость держит потоки и соединения, и по закону Литтла занятых потоков становится rps × задержка.</li>
+        <li>Слишком короткий таймаут режет нормальные медленные ответы и провоцирует ретраи. Ориентир — p99,9 здоровой зависимости с запасом.</li>
+        <li>Таймаут вызова должен укладываться в дедлайн всего запроса. Передавайте оставшийся бюджет вниз по цепочке (gRPC deadline, заголовок).</li>
+      </ul>
+      <p class="note">Двигайте таймаут и включите деградацию зависимости.</p>
+    </div>
+    <div class="demo" data-demo="timeouts"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Ретраи: экспонента и джиттер</h2>
+      <p class="lead">Сервер упал на несколько секунд, и у 1000 клиентов запросы сломались одновременно. Если все повторяют по одному расписанию, они приходят волнами: сервер, который только поднялся, получает тысячу запросов в одно мгновение, берёт в очередь сотню, отбивает остальные и потом простаивает до следующей волны.</p>
+      <p class="note">Экспонента (0,5 → 1 → 2 → 4 → 8 с, дальше потолок) снижает нагрузку, но волны остаются. Случайная задержка (full jitter: от 0 до экспоненты) размазывает их. Выберите политику и запустите.</p>
+    </div>
+    <div class="demo" data-demo="storm"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Бюджет ретраев</h2>
+      <p class="lead">Ретраи умножаются по слоям. Gateway → сервис → сервис → база, каждый делает 3 попытки: в худшем случае одна операция пользователя превращается в 3 × 3 × 3 = 27 запросов к базе — ровно тогда, когда база и так перегружена.</p>
+      <ul class="points">
+        <li>Повторяйте только в одном слое, обычно ближе к клиенту.</li>
+        <li>Бюджет: ретраев не больше 10% от успешных запросов (так делают Envoy, Finagle, gRPC retry throttling). При массовом сбое ретраи сами выключаются.</li>
+        <li>Не повторяйте 4xx и явный отказ от перегрузки (429, 503 с <code>Retry-After</code>). Повторяйте сетевые ошибки и таймауты — только для идемпотентных операций.</li>
+        <li>Лимит попыток (3–5) и общий дедлайн.</li>
+      </ul>
+    </div>
+<pre class="code"><code>
+// успех: +0,1 токена, ретрай: −1 → ретраев ≤ 10%
+type RetryBudget struct {
+	mu     sync.Mutex
+	tokens float64 // не больше max
+	max    float64
+}
+
+func (b *RetryBudget) OnSuccess() {
+	b.mu.Lock()
+	b.tokens = min(b.max, b.tokens+0.1)
+	b.mu.Unlock()
+}
+
+func (b *RetryBudget) CanRetry() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.tokens < 1 {
+		return false // бюджет исчерпан: ошибка сразу
+	}
+	b.tokens--
+	return true
+}
+</code></pre>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Ключ идемпотентности</h2>
+      <p class="lead">Клиент генерирует уникальный ключ на операцию и шлёт его со всеми повторами. Сервер в той же транзакции, что и списание, сохраняет ключ и ответ. Повтор с тем же ключом получает сохранённый ответ, а не второе списание.</p>
+<pre class="code"><code class="lang-sql">
+BEGIN;
+INSERT INTO idem_keys (key) VALUES ($1)
+  ON CONFLICT DO NOTHING;  -- 0 строк → повтор
+INSERT INTO payments ...;
+UPDATE idem_keys SET response = $2
+  WHERE key = $1;
+COMMIT;
+</code></pre>
+      <p class="note">Так работают Stripe (<code>Idempotency-Key</code>), PayPal, AWS (<code>ClientToken</code>). Ключи хранят сутки и больше, а при совпадении ключа сверяют хеш тела запроса.</p>
+    </div>
+    <div class="demo" data-demo="idem"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис переводит деньги через внешний платёжный шлюз. Шлюз не поддерживает ключи идемпотентности. Вызов упал по таймауту. Что правильно сделать?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Сразу повторить: таймаут значит, что перевод не прошёл</button>
+      <button class="opt text">Повторить с экспоненциальной задержкой и джиттером</button>
+      <button class="opt text">Вернуть пользователю ошибку «перевод не выполнен»</button>
+      <button class="opt text" data-correct>Пометить операцию как «неизвестно» и выяснить статус у шлюза по своему ID операции, прежде чем повторять</button>
+      <div class="explain">Таймаут — это «неизвестно», а не «ошибка». Повтор может списать деньги дважды, а ответ «не выполнено» может оказаться ложью. Операцию сохраняют в статусе «неизвестно» и выясняют, что случилось: запросом статуса по своему ID, который передали в шлюз, или сверкой (reconciliation) с выпиской. Этот вопрос любят на собеседованиях.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Circuit breaker</h2>
+      <p class="lead">Если зависимость стабильно падает, нет смысла каждый раз ждать её таймаута. Предохранитель считает ошибки в окне последних вызовов и при превышении порога размыкается: вызовы сразу получают ошибку или запасной ответ.</p>
+      <ul class="points">
+        <li><b>Closed</b> — вызовы идут, ошибки считаются.</li>
+        <li><b>Open</b> — вызовов нет, ошибка за микросекунды. Зависимость получает передышку.</li>
+        <li><b>Half-open</b> — через паузу пропускаем несколько пробных вызовов. Успешны — замыкаемся, нет — снова open.</li>
+      </ul>
+      <p class="note">Окно — 20 вызовов, порог 50%, пауза 5 с, 3 пробных вызова. Сломайте зависимость, а потом почините.</p>
+    </div>
+    <div class="demo" data-demo="breaker"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Переборки и каскадные отказы</h2>
+      <p class="lead">Сервис ходит в B и C через общий пул из 20 потоков. C начал отвечать за 2 секунды вместо 50 мс. По закону Литтла вызовам C теперь нужно 50 rps × 2 с = 100 потоков: они занимают весь пул, и запросы к здоровому B тоже отбиваются.</p>
+      <p class="note">Так отказ одной зависимости роняет весь сервис, а за ним — тех, кто зовёт его. Переборка (bulkhead) — отдельный пул или лимит одновременных вызовов на каждую зависимость: C тонет в своём отсеке. Включите тормоза C, затем переборки.</p>
+    </div>
+    <div class="demo" data-demo="bulkhead"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Очереди: семантика доставки</h2>
+      <ul class="points">
+        <li><b>At-most-once</b> — подтвердить (ack), потом обработать. Упали посередине — сообщение потеряно.</li>
+        <li><b>At-least-once</b> — обработать, потом ack. Упали посередине — брокер доставит снова, и эффект применится дважды.</li>
+        <li><b>«Exactly-once»</b> на практике = at-least-once + идемпотентный потребитель: ID сообщения записывается в той же транзакции, что и эффект, и повтор пропускается.</li>
+      </ul>
+      <p class="note">Каждое сообщение — «начислить 100 ₽». Обрабатывайте, роняйте потребителя посередине и сравнивайте баланс с ожидаемым.</p>
+    </div>
+    <div class="demo" data-demo="delivery"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Порядок и партиции</h2>
+      <ul class="points">
+        <li>Kafka гарантирует порядок только внутри партиции. Партиция выбирается по хешу ключа, поэтому все события одного заказа — по порядку, если ключ = <code>order_id</code>.</li>
+        <li>В группе потребителей партицию читает ровно один потребитель. Параллельность ≤ числа партиций.</li>
+        <li>Глобальный порядок = одна партиция = один потребитель. Обычно он не нужен — нужен порядок по сущности.</li>
+        <li>Порядок ломают: ретраи продюсера без <code>enable.idempotence</code>, обработка одной партиции в нескольких потоках, перебалансировка (сообщения после последнего коммита оффсета придут снова).</li>
+      </ul>
+      <p class="note">Когда брать Kafka, а когда RabbitMQ — в презентации <a href="/backend-stack/#10">«Серверные технологии»</a>.</p>
+    </div>
+    <div class="parts" aria-label="Схема: события трёх заказов по партициям">
+      <div class="pt-prod"><span class="label">продюсер, ключ = order_id</span>
+        <div class="pt-evs"><i class="k1">A1</i><i class="k2">B1</i><i class="k1">A2</i><i class="k3">C1</i><i class="k2">B2</i><i class="k1">A3</i></div>
+      </div>
+      <div class="pt-row"><b>P0</b><div class="pt-log"><i class="k1">A1</i><i class="k1">A2</i><i class="k1">A3</i></div><span>→ потребитель 1</span></div>
+      <div class="pt-row"><b>P1</b><div class="pt-log"><i class="k2">B1</i><i class="k2">B2</i></div><span>→ потребитель 2</span></div>
+      <div class="pt-row"><b>P2</b><div class="pt-log"><i class="k3">C1</i></div><span>→ потребитель 2</span></div>
+      <p class="note">hash(A) mod 3 = 0, hash(B) = 1, hash(C) = 2. A1 → A2 → A3 всегда по порядку; между A и B порядка нет и не нужно.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Двойная запись и transactional outbox</h2>
+      <p class="lead">Сервис сохраняет заказ в базу и публикует событие в брокер. Это две разные системы, общей транзакции нет: процесс может упасть между ними, и одна запись случится без другой.</p>
+      <p class="note">Outbox: событие пишется в таблицу <code>outbox</code> в той же транзакции, что и заказ. Отдельный relay читает таблицу, публикует и помечает отправленным. Упал relay после публикации — событие уйдёт повторно, поэтому потребитель всё равно идемпотентный. Выберите способ и место сбоя.</p>
+    </div>
+    <div class="demo" data-demo="outbox"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>CDC: события из журнала базы</h2>
+      <p class="lead">Change Data Capture читает журнал репликации базы (WAL в Postgres, binlog в MySQL) и превращает каждое изменение строки в событие. Debezium + Kafka Connect — стандартный набор.</p>
+      <ul class="points">
+        <li>Relay для outbox без опроса таблицы: Debezium читает вставки в <code>outbox</code> и публикует их — задержка в миллисекунды, нагрузки на базу почти нет.</li>
+        <li>CDC сырых таблиц удобен для поиска, кэшей и аналитики, но схема таблицы становится публичным контрактом. Для событий между сервисами лучше outbox.</li>
+        <li>Слот логической репликации держит WAL, пока потребитель не прочитал. Упал Debezium — диск базы растёт. Мониторьте слоты (подробнее — в <a href="/postgres-internals/">«PostgreSQL изнутри»</a>).</li>
+        <li>Гарантия — at-least-once: после рестарта коннектор перечитывает с последнего сохранённого места.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-sql">
+-- Postgres: включить логическую репликацию
+ALTER SYSTEM SET wal_level = logical;
+
+CREATE TABLE outbox (
+  id      uuid PRIMARY KEY,
+  key     text NOT NULL,   -- order_id
+  type    text NOT NULL,   -- OrderCreated
+  payload jsonb NOT NULL,
+  created timestamptz DEFAULT now()
+);
+
+-- в той же транзакции, что и заказ
+INSERT INTO outbox (id, key, type, payload)
+VALUES (gen_random_uuid(), '42',
+        'OrderCreated', '{"sum": 1000}');
+
+-- сколько WAL держит каждый слот
+SELECT slot_name, active,
+  pg_wal_lsn_diff(pg_current_wal_lsn(),
+                  restart_lsn) AS bytes
+FROM pg_replication_slots;
+</code></pre>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Саги: транзакция из шагов и компенсаций</h2>
+      <p class="lead">Заказ затрагивает четыре сервиса со своими базами. Распределённая транзакция (2PC) блокирует всех на время сбоя координатора, поэтому делают сагу: цепочку локальных транзакций. Если шаг не удался, уже сделанные шаги отменяются компенсациями в обратном порядке.</p>
+      <ul class="points">
+        <li><b>Оркестрация</b> — один координатор знает весь сценарий и вызывает шаги. Логику видно в одном месте.</li>
+        <li><b>Хореография</b> — сервисы реагируют на события друг друга. Нет центра, но сценарий размазан по сервисам.</li>
+      </ul>
+      <p class="note">Компенсации должны быть идемпотентными и повторяться до успеха. Изоляции нет: промежуточное состояние видно, поэтому заказ живёт в статусе <code>PENDING</code>. Выберите шаг, который упадёт.</p>
+    </div>
+    <div class="demo" data-demo="saga"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В Kafka включены транзакции и <code>processing.guarantee=exactly_once_v2</code>. Потребитель читает событие, пишет строку в Postgres и отправляет письмо. Что гарантировано?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Строка и письмо — ровно один раз</button>
+      <button class="opt text">Строка — ровно один раз, письмо — нет</button>
+      <button class="opt text" data-correct>Ровно один раз — только запись в топики Kafka; строка и письмо могут повториться</button>
+      <button class="opt text">Ничего: exactly-once в Kafka не работает</button>
+      <div class="explain">Транзакции Kafka атомарно связывают чтение, запись в топики и коммит оффсетов — внутри Kafka. Postgres и почтовый сервер в эту транзакцию не входят: потребитель может упасть после INSERT и до коммита оффсета и обработать событие снова. Для строки — ID события в той же транзакции Postgres (как на слайде про доставку), для письма — таблица отправленных или ключ идемпотентности у почтового провайдера.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Часы врут: время и порядок событий</h2>
+      <ul class="points">
+        <li>Часы серверов расходятся: NTP держит единицы миллисекунд в ДЦ, но после сбоя синхронизации или на ВМ расхождение бывает сотни миллисекунд. Часы могут прыгнуть назад.</li>
+        <li>Поэтому «последняя запись побеждает» по времени сервера молча теряет данные. Длительности меряйте монотонными часами (<code>time.Since</code>, <code>System.nanoTime</code>), не <code>now()</code>.</li>
+        <li>Часы Лэмпорта: счётчик +1 на каждом событии, в сообщение кладём счётчик, получатель берёт max(свой, пришедший) + 1. Если A причина B, то L(A) &lt; L(B).</li>
+      </ul>
+      <p class="note">Сценарий: запись x=1 на A реплицируется на B, клиент на B видит её и пишет x=2. Реплика C применяет «побеждает большая метка». Сдвиньте часы B назад и сравните метки.</p>
+    </div>
+    <div class="demo" data-demo="clocks"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Консенсус: Raft</h2>
+      <ul class="points">
+        <li>Время поделено на сроки (term). В каждом сроке не больше одного лидера: чтобы им стать, нужны голоса большинства, а голосуют за одного кандидата за срок.</li>
+        <li>Лидер принимает записи и рассылает их в журналы ведомых. Запись подтверждена, когда она есть у большинства.</li>
+        <li>Лидер молчит дольше таймаута выборов (случайного) — ведомый начинает выборы со сроком +1.</li>
+        <li>Кворум — большинство: 2 из 3, 3 из 5. Кластер из 4 терпит один отказ, как и из 3, поэтому узлов ставят нечётное число. etcd, Consul, Kafka KRaft, CockroachDB построены на Raft.</li>
+      </ul>
+      <p class="note">Время замедлено примерно в 10 раз. Пишите, роняйте лидера, нажимайте на узлы.</p>
+    </div>
+    <div class="demo" data-demo="raft"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Аренда и fencing-токены</h2>
+      <p class="lead">Распределённая блокировка — это аренда (lease) на время: если владелец пропал, через TTL её получит другой. Но владелец мог не пропасть, а замереть: пауза GC, своп, остановка ВМ. Проснувшись, он не знает, что аренда истекла, и пишет.</p>
+      <p class="note">Защита — монотонный fencing-токен: сервис блокировок выдаёт номер с каждой арендой, хранилище помнит максимальный и отвергает меньшие. В etcd это revision ключа, в ZooKeeper — zxid. Пройдите сценарий без токена и с ним.</p>
+    </div>
+    <div class="demo" data-demo="fencing"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Кластер etcd из 3 узлов решили расширить до 4, «чтобы было надёжнее». Сколько узлов теперь может упасть без потери записи?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">2: половина кластера</button>
+      <button class="opt text" data-correct>1, как и раньше</button>
+      <button class="opt text">3: достаточно одного живого узла с данными</button>
+      <button class="opt text">0: при чётном числе узлов выборы невозможны</button>
+      <div class="explain">Кворум из 4 — это 3 узла, значит, переживаем 1 отказ — столько же, сколько с тремя. Зато каждая запись теперь ждёт подтверждения от 3 узлов, а не от 2, и вероятность, что откажут два из четырёх, выше, чем два из трёх. Нужна устойчивость к двум отказам — ставят 5. Больше 7 почти не бывает: запись становится медленнее.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>На собеседовании и в проде</h2>
+      <ul class="points">
+        <li>На каждой стрелке схемы скажите: что будет при таймауте, кто повторяет, где ключ идемпотентности.</li>
+        <li>Называйте семантику доставки явно. «Exactly-once» — только с оговоркой про идемпотентного потребителя.</li>
+        <li>Событие после записи в базу — outbox или CDC, а не «запишем и отправим».</li>
+        <li>Многошаговый процесс через сервисы — сага с компенсациями, а не 2PC.</li>
+        <li>Лидер и блокировки — готовый консенсус (etcd, ZooKeeper) плюс fencing-токены. Свой Raft не пишут.</li>
+        <li>Проверяйте отказы заранее: задержки и потери в сети, падение зависимости, пауза процесса.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+# задержка 200±50 мс и 2% потерь
+tc qdisc add dev eth0 root \
+   netem delay 200ms 50ms loss 2%
+tc qdisc del dev eth0 root
+
+# toxiproxy: «медленный Redis» в тестах
+toxiproxy-cli toxic add \
+   -t latency -a latency=2000 redis
+
+# «пауза GC» на 15 секунд
+kill -STOP $PID; sleep 15; kill -CONT $PID
+
+# что смотреть в метриках
+retries/sec, retry budget exhausted,
+circuit breaker state, consumer lag,
+outbox: самая старая неотправленная запись,
+raft: leader changes, proposals failed
+</code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>У удалённого вызова три исхода: успех, ошибка и «неизвестно». Таймаут — это «неизвестно».</li>
+      <li>Таймаут на каждом вызове; ретраи — с экспонентой, джиттером и бюджетом, в одном слое.</li>
+      <li>Повторяемое — идемпотентно: ключ у API, ID сообщения у потребителя.</li>
+      <li>Circuit breaker и переборки не дают одной зависимости уронить всё.</li>
+      <li>Доставка — at-least-once, «ровно один раз» делает потребитель. Событие после записи — через outbox.</li>
+      <li>Порядок — не по часам серверов. Лидер — по кворуму, его права — по fencing-токену.</li>
+    </ul>
+    <p class="proverb">Распределённая система — это когда отказ компьютера, о существовании которого вы не знали, ломает ваш.<cite>Лесли Лэмпорт</cite></p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-2.js"></script>
+</body>
+</html>

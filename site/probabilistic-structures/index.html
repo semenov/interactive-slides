@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Структуры данных больших систем — интерактивная презентация</title>
+  <meta name="description" content="Фильтр Блума, HyperLogLog, Count-Min Sketch, reservoir sampling, skip list, LSM-дерево, консистентное хеширование, geohash, деревья Меркла и token bucket: как устроены и где работают в базах данных и распределённых системах.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-bloom" aria-hidden="true">
+      <div class="hb-words"><span>«кот»</span><span class="q">«лис»?</span></div>
+      <svg class="hb-arrows" viewBox="0 0 320 70" preserveAspectRatio="none">
+        <path d="M70 4 C70 40 30 40 30 66"/><path d="M70 4 C70 40 130 40 130 66"/><path d="M70 4 C70 40 230 40 230 66"/>
+        <path class="q" d="M240 4 C240 40 130 40 130 66"/><path class="q" d="M240 4 C240 40 230 40 230 66"/><path class="q" d="M240 4 C240 40 290 40 290 66"/>
+      </svg>
+      <div class="hb-bits"><i class="on"></i><i></i><i class="on2"></i><i></i><i class="on"></i><i></i><i></i><i class="on2"></i><i class="on"></i><i></i><i class="on2"></i><i></i><i></i><i class="on2"></i><i class="miss"></i><i></i></div>
+      <div class="hb-cap"><span>m = 16 бит · k = 3 хеша</span><span>0 → «точно нет»</span></div>
+    </div>
+    <div class="stack">
+      <h1>Структуры данных больших систем</h1>
+      <p class="lead">Фильтры Блума, HyperLogLog, Count-Min, skip list, LSM-деревья, консистентное хеширование и деревья Меркла — то, на чём построены Cassandra, Redis, RocksDB и CDN. Финал серии «Алгоритмы и структуры данных».</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Точно или примерно</h2>
+      <p class="lead">«Сколько уникальных посетителей за месяц?» Точный ответ требует помнить каждого. На миллиардах ключей это сотни гигабайт — и всё это ради одного числа.</p>
+      <ul class="points">
+        <li>Вероятностные структуры отвечают с известной ошибкой, но за фиксированную или крошечную память.</li>
+        <li>Ошибка — не «как повезёт», а параметр: её выбирают заранее и платят за неё битами.</li>
+      </ul>
+      <p class="note">Двигайте ползунок: сколько памяти займёт множество 64-битных ID в разных структурах.</p>
+    </div>
+    <div class="demo" data-demo="memcalc"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Фильтр Блума</h2>
+      <p class="lead">Массив из <i>m</i> бит и <i>k</i> хеш-функций. Добавить элемент — выставить в единицу <i>k</i> бит. Проверить — посмотреть на те же <i>k</i> бит.</p>
+      <ul class="points">
+        <li>Хоть один бит 0 — элемента <b>точно нет</b>.</li>
+        <li>Все биты 1 — элемент <b>вероятно есть</b>: эти биты могли выставить другие.</li>
+        <li>Удалять нельзя: бит общий для многих элементов.</li>
+      </ul>
+      <p class="note">Добавьте слова, затем проверяйте другие. Ищите ложное срабатывание.</p>
+    </div>
+    <div class="demo" data-demo="bloom"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сколько бит и сколько хешей</h2>
+      <p class="lead">Вероятность ложного срабатывания после <i>n</i> вставок:</p>
+      <p class="formula">p ≈ (1 − e<sup>−kn/m</sup>)<sup>k</sup><br>лучшее k = (m/n)·ln 2</p>
+      <ul class="points">
+        <li>~10 бит на элемент и k = 7 — это 1%. Каждые +4,8 бита делят ошибку на 10.</li>
+        <li>Размер элемента не важен: URL в 200 байт стоит те же 10 бит.</li>
+        <li>Хешей мало — биты пустуют; много — фильтр быстро «засыпает» единицами.</li>
+      </ul>
+      <p class="note">Двигайте ползунки. В схеме — формула и эксперимент на настоящем фильтре.</p>
+    </div>
+    <div class="demo" data-demo="bloomcalc"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Где работают фильтры Блума</h2>
+      <ul class="points">
+        <li><b>LSM-хранилища</b> (RocksDB, Cassandra, HBase): у каждого SSTable свой фильтр. «Ключа точно нет» — файл не читаем с диска. В Cassandra это <code>bloom_filter_fp_chance</code>.</li>
+        <li><b>CDN и кэши</b>: класть объект в кэш только со второго запроса. Фильтр помнит «уже видели», и одноразовые URL не вытесняют полезные.</li>
+        <li><b>«Логин занят?»</b>: «точно свободен» — сразу, «вероятно занят» — проверка в базе.</li>
+        <li><b>Postgres</b>: расширение <code>bloom</code> — один индекс на равенство по многим колонкам; <b>ClickHouse</b> — skip-индекс <code>bloom_filter</code>.</li>
+        <li>Удалять умеют варианты: <b>counting Bloom</b> (счётчики по 4 бита вместо бит — в 4 раза больше памяти) и <b>cuckoo filter</b> (отпечатки в хеш-таблице кукушки: удаление, меньше памяти при p &lt; 3%).</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+from hashlib import blake2b
+from math import ceil, log
+
+class Bloom:
+    def __init__(self, n, p):
+        self.m = ceil(-n * log(p) / log(2) ** 2)
+        self.k = round(self.m / n * log(2))
+        self.bits = bytearray(self.m // 8 + 1)
+
+    def _idx(self, item: str):
+        d = blake2b(item.encode()).digest()
+        h1 = int.from_bytes(d[:8])
+        h2 = int.from_bytes(d[8:16])
+        # k индексов из двух хешей — как в Guava
+        for i in range(self.k):
+            yield (h1 + i * h2) % self.m
+
+    def add(self, item):
+        for i in self._idx(item):
+            self.bits[i >> 3] |= 1 &lt;&lt; (i &amp; 7)
+
+    def __contains__(self, item):
+        return all(self.bits[i >> 3] >> (i &amp; 7) &amp; 1
+                   for i in self._idx(item))
+
+b = Bloom(n=1_000_000, p=0.01)  # 1,2 МБ, k = 7
+</code></pre>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Фильтр Блума рассчитан на 1 млн элементов с ошибкой 1% (9,6 бита на элемент, k = 7). В него записали 3 млн. Что произошло?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Ошибка выросла втрое, до 3%</button>
+      <button class="opt text">Фильтр начал терять элементы: часть добавленных теперь «не найдена»</button>
+      <button class="opt text" data-correct>Ложных срабатываний стало около 44%, но добавленные элементы по-прежнему находятся</button>
+      <button class="opt text">Фильтр переполнился и перестал принимать новые элементы</button>
+      <div class="explain">Ошибка растёт не линейно: (1 − e<sup>−7·3/9,6</sup>)<sup>7</sup> ≈ 0,44. Ложных «нет» не бывает никогда: биты только включаются. Поэтому фильтр для растущих данных делают масштабируемым (новый слой, когда старый заполнился, — так устроен <code>BF.RESERVE … EXPANSION</code> в Redis) или пересоздают, как SSTable при компакции.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>HyperLogLog: уникальные за 12 КБ</h2>
+      <p class="lead">Хеш — случайные биты. Увидеть хеш, начинающийся с 10 нулей, — шанс 1 к 1024: значит, уникальных было порядка тысячи. Одна такая оценка шумная, поэтому хеши делят на <i>m</i> корзин по первым битам и усредняют.</p>
+      <p class="note">В каждой корзине хранится только максимум «нулей в начале + 1» — 6 бит. Ошибка ≈ 1,04/√m. Добавляйте посетителей и повторы: повторы оценку не меняют.</p>
+    </div>
+    <div class="demo" data-demo="hll"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>HyperLogLog на практике</h2>
+      <ul class="points">
+        <li><b>Redis</b>: <code>PFADD</code>/<code>PFCOUNT</code>, 16 384 регистра, 12 КБ, ошибка 0,81% — на любом числе элементов. Пока элементов мало, хранит разреженно, в сотни байт.</li>
+        <li><b>Объединение без потерь</b>: максимум по регистрам. Храните HLL за каждый день — уникальные за месяц получаются слиянием, не пересчётом сырых логов.</li>
+        <li><b>Аналитика</b>: <code>uniq</code> в ClickHouse, <code>APPROX_COUNT_DISTINCT</code> в BigQuery и Snowflake, <code>approx_distinct</code> в Trino, расширение <code>hll</code> для Postgres.</li>
+        <li>Пересечение HLL не умеет: «и вчера, и сегодня» считают через |A| + |B| − |A∪B| с большой ошибкой или берут Theta-скетчи (Apache DataSketches).</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+import redis
+r = redis.Redis()
+
+# на каждый просмотр: O(1), память не растёт
+r.pfadd("uv:2026-10-09", user_id)
+
+r.pfcount("uv:2026-10-09")          # ≈ 1 284 113
+
+# неделя = слияние дневных скетчей
+days = [f"uv:2026-10-{d:02}" for d in range(3, 10)]
+r.pfmerge("uv:week41", *days)
+r.pfcount("uv:week41")              # ≈ 5 902 447
+
+r.memory_usage("uv:week41")         # ~12 КБ
+</code></pre>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Count-Min Sketch: что популярно</h2>
+      <p class="lead">Таблица <i>d</i> × <i>w</i> счётчиков и <i>d</i> хешей. Событие увеличивает по одному счётчику в каждой строке. Частота — минимум из этих <i>d</i> счётчиков.</p>
+      <ul class="points">
+        <li>Коллизии только добавляют: оценка <b>никогда не меньше</b> правды.</li>
+        <li>Ошибка ≤ ε·N при w = e/ε, с вероятностью 1 − e<sup>−d</sup>. Редкие элементы тонут в шуме, частые видны точно.</li>
+        <li>Плюс куча на K элементов — и получаем топ трендов в потоке за килобайты.</li>
+      </ul>
+      <p class="note">Пустите поток хештегов, нажмите на тег в топе — подсветятся его счётчики.</p>
+    </div>
+    <div class="demo" data-demo="cms"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Reservoir sampling</h2>
+      <p class="lead">Нужна случайная выборка из <i>k</i> строк лога, а длина потока заранее неизвестна. Первые <i>k</i> берём целиком. Элемент номер <i>i</i> попадает в выборку с вероятностью <i>k/i</i> и вытесняет случайного.</p>
+<pre class="code"><code class="lang-py">
+import random
+
+def reservoir(stream, k):
+    sample = []
+    for i, x in enumerate(stream, 1):
+        if i &lt;= k:
+            sample.append(x)
+        elif (j := random.randrange(i)) &lt; k:
+            sample[j] = x
+    return sample
+</code></pre>
+      <p class="note">В любой момент каждый из увиденных <i>i</i> элементов лежит в выборке с вероятностью ровно <i>k/i</i>. Так семплируют трейсы, логи и строки для статистики (<code>ANALYZE</code> в Postgres).</p>
+    </div>
+    <div class="demo" data-demo="reservoir"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Count-Min Sketch говорит, что хештег <code>#go</code> встречался 1 200 раз. Что точно можно сказать о реальном числе?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Оно равно 1 200 ± 1%</button>
+      <button class="opt text" data-correct>Оно не больше 1 200</button>
+      <button class="opt text">Оно не меньше 1 200</button>
+      <button class="opt text">Ничего: оценка может ошибаться в обе стороны</button>
+      <div class="explain">Каждый из <i>d</i> счётчиков = правда + чужие события, попавшие в ту же ячейку. Чужие только прибавляют, поэтому минимум — верхняя граница. Отсюда и применение: «топ-10 трендов» показывает всё действительно частое, но иногда к нему примешивается не очень частое. Если нужна нижняя граница — берут Space-Saving или Misra-Gries.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Skip list</h2>
+      <p class="lead">Отсортированный связный список с «экспрессами». Каждый узел при вставке подбрасывает монетку: орёл — поднимается на уровень выше. Поиск идёт сверху: вправо, пока следующий ключ меньше искомого, иначе вниз.</p>
+      <ul class="points">
+        <li>O(log n) в среднем, как у сбалансированного дерева, но без поворотов: вставка меняет только соседние указатели.</li>
+        <li><b>Redis</b> sorted set (<code>ZADD</code>, <code>ZRANGEBYSCORE</code>) — skip list плюс хеш-таблица. Memtable в RocksDB и LevelDB, <code>ConcurrentSkipListMap</code> в Java — лок-фри.</li>
+      </ul>
+      <p class="note">Ищите ключи и вставляйте новые. Подсвечен путь поиска.</p>
+    </div>
+    <div class="demo" data-demo="skiplist"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>LSM-дерево</h2>
+      <p class="lead">Запись — в отсортированную структуру в памяти (memtable) и в журнал. Заполнилась — сбрасывается на диск неизменяемым файлом SSTable. Фоновая компакция сливает файлы, выкидывая старые версии и удалённые ключи.</p>
+      <p class="note">Чтение идёт от новых данных к старым: memtable, затем SSTable. Фильтр Блума позволяет не трогать файлы, где ключа нет. Удаление — тоже запись: «надгробие». Пишите, читайте, удаляйте и запускайте компакцию.</p>
+    </div>
+    <div class="demo" data-demo="lsm"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>LSM против B-дерева</h2>
+    <div class="cmp" role="table">
+      <div class="cmp-row head" role="row"><span role="columnheader"></span><b role="columnheader">B-дерево</b><b role="columnheader">LSM</b></div>
+      <div class="cmp-row" role="row"><span role="rowheader">Запись</span><span role="cell">На место: случайная запись страницы 8–16 КБ ради одной строки</span><span role="cell">Последовательно, пачками. Хорошо для SSD и HDD</span></div>
+      <div class="cmp-row" role="row"><span role="rowheader">Усиление записи</span><span role="cell">Страница + WAL на изменение</span><span role="cell">Каждый байт переписывается компакцией ~10–30 раз (leveled)</span></div>
+      <div class="cmp-row" role="row"><span role="rowheader">Чтение ключа</span><span role="cell">Один путь от корня, 3–4 страницы, верх в кэше</span><span role="cell">Memtable + несколько уровней; фильтры Блума отсекают лишнее</span></div>
+      <div class="cmp-row" role="row"><span role="rowheader">Диапазоны</span><span role="cell">Отлично: листья по порядку</span><span role="cell">Слияние нескольких файлов на лету</span></div>
+      <div class="cmp-row" role="row"><span role="rowheader">Место</span><span role="cell">Страницы заполнены на 50–90%</span><span role="cell">Сжатие блоков; мусор до компакции</span></div>
+      <div class="cmp-row" role="row"><span role="rowheader">Где</span><span role="cell">PostgreSQL, MySQL InnoDB, SQLite</span><span role="cell">RocksDB, Cassandra, ScyllaDB, HBase, ClickHouse MergeTree, Kafka Streams</span></div>
+    </div>
+    <p class="note">Правило: много записи и ключ-значение — LSM, смешанная нагрузка с диапазонами и транзакциями — B-дерево. Как устроено B-дерево — в презентации <a href="/trees-heaps/">про деревья и кучи</a>, а в живом Postgres — <a href="/postgres-internals/">PostgreSQL изнутри</a>.</p>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Консистентное хеширование</h2>
+      <p class="lead"><code>hash(key) % N</code> ломается при изменении N: почти все ключи меняют сервер, кэш пустеет разом. На кольце ключ принадлежит первому серверу по часовой стрелке — при добавлении сервера переезжает ~1/N ключей.</p>
+      <ul class="points">
+        <li>Виртуальные узлы: каждый сервер стоит на кольце 100–200 раз, нагрузка ровнее.</li>
+        <li>Клиенты memcached (ketama), Dynamo и Cassandra (токены), балансировщики и CDN. Альтернатива без кольца — rendezvous hashing: сервер с максимальным <code>hash(key, server)</code>.</li>
+      </ul>
+      <p class="note">Добавляйте и убирайте серверы в обоих режимах. Подробнее о шардировании — <a href="/sd-data/">в презентации про данные в system design</a>.</p>
+    </div>
+    <div class="demo" data-demo="ring"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Кэш на 10 серверах, сервер выбирают как <code>hash(key) % N</code>. Добавили одиннадцатый. Какая доля ключей теперь ищется не на том сервере?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 1/11 — 9%</button>
+      <button class="opt text">Около половины</button>
+      <button class="opt text" data-correct>Около 10/11 — 91%</button>
+      <button class="opt text">Ни одного: старые ключи остаются на местах</button>
+      <div class="explain">Ключ остаётся на месте, только если <code>h % 10 == h % 11</code> — это 10 значений из 110, то есть 1/11. Остальные 91% ключей — промахи, и вся нагрузка разом идёт в базу. С консистентным хешированием переедет лишь ~1/11 ключей, ровно то, что теперь должен обслуживать новый сервер.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Geohash: поиск рядом</h2>
+      <p class="lead">Биты долготы и широты перемежаются: каждый бит делит клетку пополам. Близкие точки получают общий префикс, и «кто рядом» превращается в поиск по префиксу в обычном отсортированном индексе.</p>
+      <ul class="points">
+        <li>Точка у края клетки ближе к соседям, чем к своей клетке, поэтому ищут в 3×3 клетках.</li>
+        <li><b>Redis</b> <code>GEOADD</code> — 52-битный geohash как score в sorted set (тот самый skip list). Elasticsearch, MongoDB. Quadtree делит клетки по плотности точек, Uber H3 — шестиугольники, Google S2 — кривая Гильберта.</li>
+      </ul>
+      <p class="note">Нажмите на карту и меняйте точность. Точки — кафе вокруг 14 городов мира.</p>
+    </div>
+    <div class="demo" data-demo="geo"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Дерево Меркла</h2>
+      <p class="lead">Лист — хеш блока данных, узел — хеш от хешей детей. Совпали корни — совпадает всё. Не совпали — спускаемся только в отличающиеся ветки и находим разницу за O(log n) сравнений, не пересылая данные.</p>
+      <ul class="points">
+        <li>Anti-entropy в Cassandra (<code>nodetool repair</code>), Dynamo, Riak: реплики сверяют деревья по диапазонам ключей.</li>
+        <li><b>git</b>: коммит → дерево → блобы, всё адресуется хешем. <b>Блокчейны</b>: доказательство, что транзакция в блоке, — log n хешей. А ещё ZFS, IPFS, Certificate Transparency.</li>
+      </ul>
+      <p class="note">Испортите блоки на реплике B и сверяйте.</p>
+    </div>
+    <div class="demo" data-demo="merkle"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Token bucket: ограничение запросов</h2>
+      <p class="lead">В ведре до <i>b</i> жетонов, они добавляются со скоростью <i>r</i> в секунду. Запрос забирает жетон, а если жетонов нет — получает 429. Средняя скорость ≤ r, а всплеск до <i>b</i> запросов проходит сразу.</p>
+<pre class="code"><code class="lang-py">
+def allow(self) -> bool:
+    now = time.monotonic()
+    add = (now - self.t) * self.r
+    self.tok = min(self.b, self.tok + add)
+    self.t = now
+    if self.tok >= 1:
+        self.tok -= 1
+        return True
+    return False
+</code></pre>
+      <p class="note">Хранить достаточно двух чисел: жетоны и время. В Redis это пара полей и Lua-скрипт. Так работают <code>golang.org/x/time/rate</code>, Guava <code>RateLimiter</code>, лимиты AWS и Stripe; <code>limit_req</code> в nginx — родственный leaky bucket.</p>
+    </div>
+    <div class="demo" data-demo="bucket"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Что за что платит</h2>
+    <div class="tt" role="table">
+      <div class="tt-row head" role="row"><b role="columnheader">Структура</b><b role="columnheader">Отвечает на</b><b role="columnheader">Ошибка</b><b role="columnheader">Память</b></div>
+      <div class="tt-row" role="row"><b role="rowheader">Хеш-множество</b><span role="cell">есть ли x, сколько всего</span><span role="cell">нет</span><span role="cell">30–70 Б на элемент</span></div>
+      <div class="tt-row" role="row"><b role="rowheader">Фильтр Блума</b><span role="cell">есть ли x</span><span role="cell">ложное «да», p</span><span role="cell">1,44·log₂(1/p) бит: 1% → 9,6 бита</span></div>
+      <div class="tt-row" role="row"><b role="rowheader">Cuckoo filter</b><span role="cell">есть ли x, + удаление</span><span role="cell">ложное «да»</span><span role="cell">~7–12 бит</span></div>
+      <div class="tt-row" role="row"><b role="rowheader">HyperLogLog</b><span role="cell">сколько разных</span><span role="cell">±1,04/√m: 0,81% на 12 КБ</span><span role="cell">фиксированная, ~0 на элемент</span></div>
+      <div class="tt-row" role="row"><b role="rowheader">Count-Min</b><span role="cell">сколько раз x, топ-K</span><span role="cell">только завышает, ≤ εN</span><span role="cell">фиксированная: d × w счётчиков</span></div>
+      <div class="tt-row" role="row"><b role="rowheader">Reservoir</b><span role="cell">случайная выборка</span><span role="cell">статистическая</span><span role="cell">k элементов</span></div>
+      <div class="tt-row" role="row"><b role="rowheader">Skip list, LSM, кольцо, Меркл</b><span role="cell">порядок, запись, шардинг, сверка</span><span role="cell">точные</span><span role="cell">O(n) + служебное</span></div>
+    </div>
+    <p class="note">Вероятностные структуры сливаются (Блум — OR, HLL — max, Count-Min — сумма): их считают по шардам и по часам, а потом объединяют. Это и делает их удобными в распределённых системах.</p>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>На собеседовании и в проде</h2>
+      <p class="lead">На system design эти структуры — готовые ответы на типовые подзадачи. Назовите структуру, её ошибку и цену в памяти.</p>
+      <ul class="points">
+        <li>«Уникальные посетители / DAU» — HyperLogLog по дням, слияние за период.</li>
+        <li>«Топ хештегов за 5 минут» — Count-Min + куча, окна по минутам.</li>
+        <li>«Не показывать прочитанное», «логин занят», «краулер: был ли URL» — фильтр Блума.</li>
+        <li>«Шардировать кэш» — консистентное хеширование. «Водители рядом» — geohash или H3.</li>
+        <li>«Rate limiter» — token bucket в Redis. «Сверить реплики» — дерево Меркла.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+# Redis: посмотреть своими глазами
+PFADD uv a b c d; PFCOUNT uv   → 4
+MEMORY USAGE uv                → ~100 Б
+OBJECT ENCODING board          → skiplist
+GEOSEARCH cafes FROMLONLAT 37.6 55.7 \
+  BYRADIUS 1 km
+# модуль RedisBloom
+BF.RESERVE seen 0.01 1000000
+CMS.INITBYPROB tags 0.001 0.01
+
+# Cassandra: фильтры SSTable в деле
+nodetool tablestats ks.t | grep -i bloom
+#  Bloom filter false ratio: 0.00870
+
+# Библиотеки
+Python: datasketch, pyprobables
+Go:     bits-and-blooms/bloom,
+        axiomhq/hyperloglog
+Java:   Guava BloomFilter,
+        Apache DataSketches
+</code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Фильтр Блума: «точно нет» или «вероятно да», ~10 бит на элемент за 1%. Экономит чтения с диска и походы в базу.</li>
+      <li>HyperLogLog считает уникальных с ошибкой ~1% за 12 КБ, Count-Min — частоты и топ-K, только завышая.</li>
+      <li>Skip list — упорядоченный набор без балансировки: Redis ZSET и memtable.</li>
+      <li>LSM меняет случайную запись на последовательную и платит компакцией и чтением нескольких файлов.</li>
+      <li>Консистентное хеширование переносит ~1/N ключей вместо почти всех. Деревья Меркла находят расхождение за log n.</li>
+      <li>Задайте ошибку заранее — и миллиарды элементов уместятся в килобайты.</li>
+    </ul>
+    <p class="proverb">Точный ответ дорог. Хорошая система знает, где можно ошибиться и на сколько.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-sys.js"></script>
+</body>
+</html>

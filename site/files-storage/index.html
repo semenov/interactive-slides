@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Файлы, диски и надёжная запись — интерактивная презентация</title>
+  <meta name="description" content="Файловые дескрипторы, путь записи от буфера приложения до NAND, fsync и безопасная замена файла, inode и ссылки, page cache, HDD/SSD/NVMe, устройство SSD, group commit, ротация логов.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-io" aria-hidden="true">
+      <div class="hi-layer app"><span>буфер приложения</span><i></i><i></i><i></i></div>
+      <div class="hi-arrow">write()</div>
+      <div class="hi-layer pc"><span>page cache</span><i class="d"></i><i class="d"></i><i></i><i></i><i class="d"></i></div>
+      <div class="hi-arrow">writeback · fsync()</div>
+      <div class="hi-layer dc"><span>кэш диска</span><i></i><i class="d"></i></div>
+      <div class="hi-arrow">FLUSH</div>
+      <div class="hi-layer nand"><span>NAND</span><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="stack">
+      <h1>Файлы, диски и надёжная запись</h1>
+      <p class="lead">Что стоит за <code>open()</code> и <code>write()</code>, где на самом деле лежат ваши данные после «успешной» записи, почему второе чтение в десять раз быстрее первого и чем NVMe отличается от HDD не только скоростью.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Дескриптор → открытый файл → inode</h2>
+      <p class="lead">Файл, сокет, пайп, таймер — для процесса всё это число в таблице дескрипторов. Число ссылается на «открытый файл» в ядре: там хранятся текущее смещение и флаги. А тот — на inode, сам файл на диске.</p>
+      <p class="note"><code>dup()</code> и <code>fork()</code> копируют только номер — смещение остаётся общим. Повторный <code>open()</code> создаёт новый открытый файл со своим смещением. Откройте файл, сделайте <code>fork()</code> и пишите из обоих процессов, затем откройте файл второй раз.</p>
+    </div>
+    <div class="demo" data-demo="fdtable"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>«Too many open files»</h2>
+      <ul class="points">
+        <li>Число дескрипторов на процесс ограничено: <code>ulimit -n</code>. Мягкий лимит по умолчанию часто 1024, в systemd его задаёт <code>LimitNOFILE</code>. Каждое HTTP-соединение — тоже дескриптор.</li>
+        <li>Ошибка <code>EMFILE</code> обычно значит утечку, а не маленький лимит: незакрытый файл, тело HTTP-ответа, сокет. Поднять лимит — отсрочить падение.</li>
+        <li>Не надейтесь на сборщик мусора. CPython закрывает файл сразу при потере ссылки, но PyPy, Java, Go и Node — когда-нибудь. Закрывайте явно: <code>with</code>, try-with-resources, <code>defer f.Close()</code>, <code>resp.Body.Close()</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ cat /proc/4242/limits | grep 'open files'
+Max open files      1024      524288    files
+
+$ ls /proc/4242/fd | wc -l       # сколько открыто сейчас
+1021
+
+$ ls -l /proc/4242/fd | tail -3
+lr-x------ 1018 -> /var/data/report-17.csv
+lr-x------ 1019 -> /var/data/report-18.csv
+lrwx------ 1020 -> socket:[884213]
+
+$ lsof -p 4242 | awk '{print $5}' | sort | uniq -c
+    812 REG     # обычные файлы — подозрительно
+    203 IPv4
+      6 FIFO
+</code></pre>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Путь одной записи</h2>
+      <p class="lead"><code>write()</code> возвращает управление, как только данные скопированы в память ядра — в page cache. На диск они попадут позже. А до <code>write()</code> они могут ещё лежать в буфере вашей библиотеки, внутри процесса.</p>
+      <p class="note">Пишите записи и сбрасывайте их на разные уровни, потом «убейте» процесс или выключите питание. Смотрите, что уцелеет. <code>kill -9</code> и отключение питания — очень разные аварии.</p>
+    </div>
+    <div class="demo" data-demo="writepath"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Грязные страницы и торможение записи</h2>
+      <p class="lead">Изменённые страницы page cache называются грязными. Когда их больше <code>dirty_background_ratio</code> (10% памяти), ядро начинает фоновую запись. Когда приближаются к <code>dirty_ratio</code> (20%), ядро тормозит сам процесс: <code>write()</code> начинает ждать диск.</p>
+      <p class="note">Отсюда «запись 2 ГБ/с первые секунды, потом 150 МБ/с» и внезапные паузы в несколько секунд на обычном <code>write()</code> в логгере. Сравните быстрый и медленный диск.</p>
+    </div>
+    <div class="demo" data-demo="dirty"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>flush — не fsync</h2>
+      <ul class="points">
+        <li><code>flush()</code> в Python и Java переносит данные из буфера библиотеки в ядро, и только. От <code>kill -9</code> это спасает, от отключения питания — нет.</li>
+        <li><code>fsync(fd)</code> ждёт, пока данные и метаданные файла дойдут до носителя, включая сброс кэша самого диска. <code>fdatasync</code> пропускает несущественные метаданные вроде времени изменения — на одну запись меньше.</li>
+        <li><code>O_SYNC</code> / <code>O_DSYNC</code> — то же, но на каждый <code>write()</code>. <code>O_DIRECT</code> обходит page cache, но не заменяет fsync.</li>
+        <li>fsync стоит от десятков микросекунд (NVMe с защитой от потери питания) до 10 мс (HDD). Поэтому его делают пачками.</li>
+      </ul>
+    </div>
+    <div class="langs" role="table">
+      <div class="lg head" role="row"><span role="columnheader"></span><span role="columnheader">в ядро</span><span role="columnheader">на диск</span></div>
+      <div class="lg" role="row"><b role="rowheader">Python</b><code role="cell">f.flush()</code><code role="cell">os.fsync(f.fileno())</code></div>
+      <div class="lg" role="row"><b role="rowheader">Java</b><code role="cell">out.flush()</code><code role="cell">channel.force(true)</code></div>
+      <div class="lg" role="row"><b role="rowheader">Go</b><code role="cell">bw.Flush()</code><code role="cell">f.Sync()</code></div>
+      <div class="lg" role="row"><b role="rowheader">Node</b><code role="cell">fs.write(…)</code><code role="cell">fh.sync()</code></div>
+      <div class="lg" role="row"><b role="rowheader">C</b><code role="cell">write(fd, …)</code><code role="cell">fsync(fd)</code></div>
+      <p class="note">В Go <code>os.File</code> не буферизует: каждый <code>Write</code> — системный вызов, буфер даёт <code>bufio.Writer</code>. <code>close()</code> нигде не делает fsync. А ошибку записи на диск ядро может сообщить только в fsync — его результат надо проверять.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис на Python записал строку в файл и вызвал <code>f.flush()</code>, но не fsync. Через секунду OOM killer убил процесс сигналом <code>SIGKILL</code>. Сервер продолжил работать. Строка в файле?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Нет: без fsync данные теряются</button>
+      <button class="opt text" data-correct>Да: она в page cache, ядро само запишет её на диск</button>
+      <button class="opt text">Только если файл был закрыт</button>
+      <button class="opt text">Зависит от файловой системы</button>
+      <div class="explain">После <code>flush()</code> данные принадлежат ядру, а не процессу. Смерть процесса им не грозит: грязные страницы запишутся фоном в течение ~30 секунд. Потерять их можно только вместе с ядром — при отключении питания или панике ядра. А вот без <code>flush()</code> строка осталась бы в буфере процесса и пропала.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как безопасно заменить файл</h2>
+      <p class="lead">Переписать файл на месте нельзя: упадёте посередине — останется пустой или обрезанный файл. Правильно: записать во временный файл рядом, сделать fsync, атомарно переименовать <code>rename()</code> поверх старого и сделать fsync каталога.</p>
+      <p class="note">Выберите способ, идите по шагам и нажимайте «Сбой питания» в разные моменты. Схема показывает, что видят программы и что окажется на диске после перезагрузки.</p>
+    </div>
+    <div class="demo" data-demo="atomicsave"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Журнал защищает файловую систему, а не ваши данные</h2>
+    <p class="lead">Создание файла меняет несколько мест: inode, битовую карту блоков, запись в каталоге. Журналируемая ФС сначала пишет описание изменений в журнал и только потом — на место. После сбоя она проигрывает журнал и остаётся целой — без многочасового fsck.</p>
+    <div class="fsmodes">
+      <div class="fsm"><h3>ext4 <code>data=ordered</code></h3><p>По умолчанию. В журнал идут только метаданные, но блоки данных пишутся раньше, чем фиксируются метаданные, которые на них ссылаются. В файле не окажется чужого мусора.</p></div>
+      <div class="fsm"><h3><code>data=writeback</code></h3><p>Порядок не гарантирован: после сбоя в конце файла могут оказаться старые блоки, принадлежавшие другому файлу. Быстрее, но опаснее.</p></div>
+      <div class="fsm"><h3><code>data=journal</code></h3><p>Данные тоже идут через журнал: всё пишется дважды. Редко нужно.</p></div>
+      <div class="fsm"><h3>XFS, btrfs, ZFS</h3><p>XFS журналирует метаданные. btrfs и ZFS не перезаписывают блоки на месте (copy-on-write). Но и им для надёжности нужен fsync.</p></div>
+    </div>
+    <p class="note">Журнал ext4 фиксируется раз в 5 секунд (<code>commit=5</code>), грязные данные пишутся через ~30 секунд. Ни один режим не делает ваш <code>write()</code> надёжным или атомарным: целостность ФС — да, сохранность последних данных — только fsync.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Inode, имена и ссылки</h2>
+      <p class="lead">Файл — это inode: размер, права, список блоков. Имени в нём нет. Каталог — таблица «имя → номер inode». Жёсткая ссылка — ещё одно имя того же inode. Символическая — отдельный маленький файл с путём внутри.</p>
+      <p class="note">Место освобождается, когда у inode не осталось ни имён, ни открытых дескрипторов. Удалите файл, который держит процесс, и сравните <code>df</code> и <code>du</code>.</p>
+    </div>
+    <div class="demo" data-demo="inodes"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Page cache при чтении</h2>
+      <p class="lead">Всё прочитанное с диска остаётся в свободной памяти. Второе чтение того же файла идёт из RAM. Когда памяти просят программы, ядро без труда отдаёт чистые страницы кэша.</p>
+      <p class="note">Поэтому «занято 15 из 16 ГБ» в <code>free</code> — не повод для паники: смотрите на колонку <code>available</code>. Прочитайте файл дважды, потом файл больше, чем помещается в кэш.</p>
+    </div>
+    <div class="demo" data-demo="pagecache"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Размер буфера и mmap</h2>
+      <p class="lead">Каждый <code>read()</code> — системный вызов: переход в ядро и обратно плюс копирование из page cache в ваш буфер. Прочитать 1 ГБ по байту — миллиард вызовов, буфером в 64 КБ — шестнадцать тысяч.</p>
+      <p class="note"><code>FileInputStream.read()</code> в Java и <code>os.read(fd, 1)</code> в Python читают по байту без буфера. <code>mmap</code> отображает page cache прямо в память процесса: копирования нет, но каждое первое обращение к странице — page fault, который блокирует поток. Подробнее — в <a href="/virtual-memory/">презентации про виртуальную память</a>.</p>
+    </div>
+    <div class="demo" data-demo="readbuf"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">На сервере с HDD, который пишет 200 МБ/с, вы запускаете:</p>
+<pre class="code"><code class="lang-plain">
+$ dd if=/dev/zero of=test bs=1M count=1000
+1048576000 bytes copied, 0.48 s, 2.2 GB/s
+</code></pre>
+      <p class="lead">Откуда 2,2 ГБ/с?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Диск сжимает нули</button>
+      <button class="opt text">Кэш контроллера диска</button>
+      <button class="opt text" data-correct>dd измерил скорость копирования в page cache, а не на диск</button>
+      <button class="opt text">Файловая система не выделила блоки для нулей</button>
+      <div class="explain">Гигабайт поместился в грязные страницы, и <code>write()</code> вернулся, не дождавшись диска. Честный замер: <code>dd … conv=fdatasync</code> (fsync в конце) или <code>oflag=direct</code> (мимо кэша). А лучше — <code>fio</code> с <code>--direct=1</code>. Ту же ошибку делают бенчмарки «записи в файл» на любом языке.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>HDD, SSD, NVMe: подряд и вразброс</h2>
+      <p class="lead">HDD тратит ~8 мс на каждое случайное чтение: подвести головку и дождаться нужного сектора. Подряд он читает 200 МБ/с, вразброс по 4 КБ — меньше 1 МБ/с. У SSD механики нет, и разница в сотни раз исчезает.</p>
+      <p class="note">SSD внутри параллелен — десятки кристаллов памяти. Один поток с одним запросом за раз (глубина очереди 1) загружает его на доли процента. Двигайте глубину очереди.</p>
+    </div>
+    <div class="demo" data-demo="iocalc"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Внутри SSD: страницы, блоки, FTL</h2>
+      <ul class="points">
+        <li>NAND пишется страницами (~16 КБ), а стирается только блоками из сотен страниц. Перезаписать страницу на месте нельзя.</li>
+        <li>Поэтому контроллер (FTL) пишет новую версию в свободную страницу и переставляет указатель. Старая становится мусором.</li>
+        <li>Сборщик мусора переносит живые страницы из блока и стирает его. Эти лишние записи — усиление записи (WAF): изнашивают диск и отнимают скорость.</li>
+        <li>TRIM сообщает диску, какие блоки ФС освободила, — иначе он бережно переносит удалённые данные.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="ssd"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Очередь к диску</h2>
+      <ul class="points">
+        <li>Запросы проходят блочный слой ядра (blk-mq): очереди на каждое ядро CPU, затем аппаратные очереди устройства. У NVMe их до 64 тысяч.</li>
+        <li>Планировщик: <code>none</code> для NVMe — диску виднее; <code>mq-deadline</code> — для HDD и SATA; <code>bfq</code> — честное деление между процессами. Смотреть в <code>/sys/block/*/queue/scheduler</code>.</li>
+        <li>Много запросов сразу — потоки, io_uring, асинхронные драйверы БД — дают в разы больше IOPS. Подробнее — в <a href="/async-io/">презентации про асинхронный ввод-вывод</a>.</li>
+        <li><code>%util</code> — доля времени, когда в очереди был хоть один запрос. Для параллельного SSD 100% не значит «предел». Смотрите на <code>r_await</code>/<code>w_await</code> и <code>aqu-sz</code>.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ iostat -x 1 nvme0n1
+Device     r/s   w/s r_await w_await aqu-sz %util
+nvme0n1  41250   812    0.21    0.05    8.7  99.6
+
+# 41 тыс. чтений/с, задержка 0,21 мс,
+# в среднем 8,7 запроса в очереди.
+# %util ≈ 100, но NVMe выдержит в разы больше:
+# он выполняет сотни запросов параллельно.
+
+$ cat /sys/block/nvme0n1/queue/scheduler
+[none] mq-deadline kyber bfq
+</code></pre>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как это использует база данных</h2>
+      <p class="lead">База не делает fsync файлов данных на каждый коммит. Она дописывает изменения в журнал (WAL) — последовательно, — и коммит ждёт fsync только журнала. Страницы данных пишутся позже, в фоне.</p>
+      <p class="note">Group commit: пока идёт один fsync, новые коммиты копятся и уходят следующим одним fsync. Так HDD со 120 fsync в секунду держит тысячи коммитов. Подробнее — в <a href="/postgres-internals/">презентации о PostgreSQL</a>. Добавляйте клиентов и включайте group commit.</p>
+    </div>
+    <div class="demo" data-demo="groupcommit"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Логи и ротация</h2>
+      <p class="lead">logrotate переименовывает <code>app.log</code> в <code>app.log.1</code>. Но процесс пишет в дескриптор, а не в имя, — и продолжает писать в переименованный файл, пока его не попросят открыть лог заново.</p>
+      <p class="note">Три способа: переименовать и послать сигнал (<code>SIGHUP</code>, <code>USR1</code>) на переоткрытие; переименовать без сигнала — ошибка; <code>copytruncate</code> — скопировать и обрезать, для программ, которые переоткрывать не умеют. Запустите ротацию в каждом режиме.</p>
+    </div>
+    <div class="demo" data-demo="logrotate"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Мониторинг: диск заполнен на 100%, сервис падает с <code>ENOSPC</code>. Вы удалили старый лог на 40 ГБ — <code>du</code> показывает, что место есть, а <code>df</code> — что по-прежнему 100%. Что происходит?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">df кэширует данные, нужно подождать</button>
+      <button class="opt text">Место зарезервировано для root</button>
+      <button class="opt text" data-correct>Удалённый файл всё ещё открыт процессом: место освободится, когда тот закроет дескриптор</button>
+      <button class="opt text">Кончились inode, а не блоки</button>
+      <div class="explain"><code>rm</code> удалил только имя. Inode жив, пока на него есть открытый дескриптор. Найти: <code>lsof +L1</code> — файлы с нулём ссылок. Освободить: перезапустить процесс или попросить его переоткрыть лог, а в крайнем случае обрезать через <code>: &gt; /proc/PID/fd/N</code>. (Резерв для root и нехватка inode тоже бывают, но du с df тогда не расходятся.)</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как это увидеть у себя</h2>
+    <div class="tools">
+      <div class="tool"><b>Кто что открыл</b><code>lsof -p PID</code><code>ls -l /proc/PID/fd</code><span><code>lsof +L1</code> — удалённые, но открытые файлы.</span></div>
+      <div class="tool"><b>Какие вызовы делает программа</b><code>strace -f -e trace=openat,write,fsync,rename -p PID</code><span><code>strace -c</code> — сводка: сколько read на самом деле.</span></div>
+      <div class="tool"><b>Нагрузка на диск</b><code>iostat -x 1</code><span>IOPS, задержка, очередь. Кто именно пишет: <code>iotop -o</code>, <code>pidstat -d 1</code>.</span></div>
+      <div class="tool"><b>Грязные страницы</b><code>grep -E 'Dirty|Writeback' /proc/meminfo</code><span>Пороги — <code>sysctl vm.dirty_ratio vm.dirty_background_ratio</code>.</span></div>
+      <div class="tool"><b>Что в page cache</b><code>free -h</code><code>fincore file</code><span>Смотрите <code>available</code>, а не <code>free</code>.</span></div>
+      <div class="tool"><b>Куда делось место</b><code>df -h</code><code>du -sh /var/*</code><span><code>df -i</code> — кончились inode (миллион мелких файлов).</span></div>
+      <div class="tool"><b>Что умеет диск</b><code>fio --name=r --rw=randread --bs=4k --iodepth=32 --direct=1 --size=2G</code><span>Случайное чтение с глубиной очереди 32.</span></div>
+      <div class="tool"><b>Сколько fsync в секунду</b><code>fio --name=w --rw=write --bs=4k --fsync=1 --size=256M</code><span>Главная цифра для баз данных и очередей.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Дескриптор → открытый файл со смещением → inode. Закрывайте файлы явно: утечка дескрипторов кончается <code>EMFILE</code>.</li>
+      <li>Успешный <code>write()</code> значит «в памяти ядра». <code>flush()</code> — «в ядре», надёжно — только после <code>fsync</code> и с проверкой его ошибки.</li>
+      <li>Заменяйте файлы так: временный файл → fsync → <code>rename</code> → fsync каталога.</li>
+      <li>Свободная память — это page cache. Бенчмарки без <code>--direct</code> или fsync измеряют RAM.</li>
+      <li>Случайный доступ на HDD в сотни раз медленнее последовательного. SSD любит параллельные запросы и TRIM.</li>
+      <li>Место освобождается, когда закрыт последний дескриптор. Ротация логов — с переоткрытием файла.</li>
+    </ul>
+    <p class="proverb">Данные записаны, когда вернулся fsync, а не write.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-disk.js"></script>
+</body>
+</html>

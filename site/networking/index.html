@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Сеть: от пакета до сокета — интерактивная презентация</title>
+  <meta name="description" content="Как устроена сеть под вашим HTTP-клиентом: инкапсуляция, IP и маршрутизация, NAT, DNS, TCP изнутри — рукопожатие, окна, контроль перегрузки, задержки, сокеты в ядре, порты и TIME_WAIT.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-pkt" aria-hidden="true">
+      <div class="hk eth"><span>Ethernet · 14 Б</span>
+        <div class="hk ip"><span>IP · 20 Б</span>
+          <div class="hk tcp"><span>TCP · 32 Б</span>
+            <div class="hk app"><span>GET /api/users HTTP/1.1</span><i></i><i></i><i class="s"></i></div>
+          </div>
+        </div>
+        <span class="hk-fcs">FCS</span>
+      </div>
+      <div class="hk-wire"><b></b><b></b><b></b><b></b></div>
+    </div>
+    <div class="stack">
+      <h1>Сеть: от пакета до сокета</h1>
+      <p class="lead">Что на самом деле происходит между <code>requests.get()</code> и ответом: заголовки, маршруты, NAT, DNS, рукопожатия, окна TCP и очереди в ядре. И почему задержка важнее ширины канала.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Уровни и инкапсуляция</h2>
+      <p class="lead">Каждый уровень заворачивает данные верхнего в свой заголовок. HTTP не знает про IP, IP не знает про порты, Ethernet доставляет кадр только до соседнего устройства.</p>
+      <p class="note">Кадр Ethernet несёт не больше MTU = 1500 байт IP-пакета. Минус 40 байт заголовков IP и TCP — MSS 1460, а с опцией timestamps — 1448 байт данных. Всё, что больше, TCP режет на сегменты. Нажмите на уровень, чтобы увидеть его поля, и двигайте размер ответа.</p>
+    </div>
+    <div class="demo" data-demo="encap"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>IP-адрес и подсеть</h2>
+      <p class="lead">Адрес <code>192.168.1.37/24</code> значит: первые 24 бита — номер сети, остальные — номер хоста. Перед отправкой ядро решает одно: получатель в моей сети или нет.</p>
+      <ul class="points">
+        <li>В той же сети — узнать MAC получателя через ARP и отправить кадр прямо ему.</li>
+        <li>В другой — отправить кадр на MAC шлюза, а IP получателя оставить в пакете.</li>
+        <li>Частные диапазоны (RFC 1918): <code>10/8</code>, <code>172.16/12</code>, <code>192.168/16</code>. В интернете они не маршрутизируются.</li>
+      </ul>
+      <p class="note">Выберите получателя и двигайте длину префикса. Таблица маршрутов: <code>ip route</code>.</p>
+    </div>
+    <div class="demo" data-demo="subnet"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Маршрут по шагам</h2>
+      <p class="lead">Ни один маршрутизатор не знает весь путь. Каждый смотрит адрес назначения, находит в своей таблице самый длинный подходящий префикс и отдаёт пакет следующему. И уменьшает TTL на единицу.</p>
+      <p class="note">Когда TTL доходит до нуля, маршрутизатор выбрасывает пакет и отвечает ICMP Time Exceeded. На этом построен <code>traceroute</code>: он шлёт пакеты с TTL = 1, 2, 3… и собирает адреса тех, кто ответил. Нажимайте «Следующий TTL».</p>
+    </div>
+    <div class="demo" data-demo="traceroute"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>NAT: один адрес на всех</h2>
+      <p class="lead">Дома, в офисе и в облачной VPC у машин частные адреса. Маршрутизатор подменяет адрес и порт отправителя на свой публичный и запоминает соответствие в таблице. Ответ он переводит обратно.</p>
+      <p class="note">Запись в таблице живёт, пока по соединению ходят пакеты. Простой дольше таймаута — и запись удалена: соединение «тихо умерло», хотя обе стороны считают его открытым. Отсюда TCP keepalive и пинги в WebSocket. Нажимайте кнопки по порядку.</p>
+    </div>
+    <div class="demo" data-demo="nat"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>DNS: имя → адрес</h2>
+      <p class="lead"><code>getaddrinfo()</code> спрашивает рекурсивный резолвер, а тот при пустом кэше обходит иерархию: корень → зона <code>.com</code> → авторитетный сервер домена. Ответ кэшируется на TTL.</p>
+      <ul class="points">
+        <li>Холодный запрос — сотни миллисекунд, из кэша — около миллисекунды.</li>
+        <li>JVM кэширует ответы сама (<code>networkaddress.cache.ttl</code>), Go и Python ходят в резолвер каждый раз.</li>
+        <li>В Kubernetes <code>ndots:5</code>: имя <code>api.example.com</code> сначала пробуют с суффиксами кластера — лишние запросы на каждое соединение.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="dns"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>UDP и TCP</h2>
+    <div class="fit proto">
+      <div class="fit-col">
+        <h3>UDP: датаграммы</h3>
+        <ul>
+          <li>Заголовок 8 байт: порты, длина, контрольная сумма. Больше ничего.</li>
+          <li>Нет соединения, порядка, повторов и контроля скорости. Потерялось — значит потерялось.</li>
+          <li>Границы сохраняются: один <code>sendto()</code> — одна датаграмма — один <code>recvfrom()</code>.</li>
+          <li>DNS, видео- и голосовые звонки, игры, QUIC (HTTP/3) — надёжность там своя, поверх UDP.</li>
+        </ul>
+      </div>
+      <div class="fit-col">
+        <h3>TCP: поток байтов</h3>
+        <ul>
+          <li>Заголовок 20–60 байт: порты, номера последовательности, подтверждения, окно, флаги, опции.</li>
+          <li>Соединение, порядок, повторная отправка потерь, управление потоком и перегрузкой.</li>
+          <li>Границ сообщений нет: TCP доставляет байты, а не ваши <code>send()</code>. Разбивку на сообщения делает протокол сверху: длина в заголовке, разделитель, HTTP <code>Content-Length</code>.</li>
+          <li>Потеря одного сегмента задерживает всё, что идёт за ним.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Клиент три раза вызвал <code>sock.send()</code> по 100 байт. Сервер в цикле вызывает <code>sock.recv(4096)</code>. Сколько вызовов вернут данные?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Ровно три, по 100 байт</button>
+      <button class="opt text">Ровно один, 300 байт</button>
+      <button class="opt text" data-correct>Любое число от одного до 300 — гарантирован только порядок байтов</button>
+      <button class="opt text">Три, но порядок может быть любым</button>
+      <div class="explain">TCP — поток. Ядро отправителя может склеить записи в один сегмент (Nagle), сеть может разбить их по MSS, получатель читает всё, что успело накопиться в буфере. Локально чаще всего придёт один или три куска — и код, который считает «один recv = одно сообщение», работает, пока не попадёт в реальную сеть. Читайте, пока не наберётся длина из заголовка: <code>readFully</code>, <code>io.ReadFull</code>, <code>readexactly</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Жизнь TCP-соединения</h2>
+      <p class="lead">Каждый байт имеет номер. <code>seq</code> — номер первого байта в сегменте, <code>ack</code> — номер следующего байта, который получатель ждёт: «всё до него у меня есть».</p>
+      <ul class="points">
+        <li>Рукопожатие SYN → SYN-ACK → ACK: стороны обмениваются начальными номерами. Данные — не раньше чем через RTT.</li>
+        <li>Потерю видно по повторяющимся ACK: получатель снова просит тот же байт. Три дубликата — отправитель повторяет сегмент, не дожидаясь таймаута.</li>
+        <li>Закрывает каждая сторона свою половину (FIN). Кто закрыл первым — тот ждёт в TIME_WAIT.</li>
+      </ul>
+      <p class="note">Нажимайте «Шаг».</p>
+    </div>
+    <div class="demo" data-demo="tcpflow"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Управление потоком: окно получателя</h2>
+      <p class="lead">В каждом ACK получатель сообщает, сколько ещё места в его буфере (<code>win</code>). Отправитель не держит в пути больше этого. Медленное приложение-получатель тормозит отправителя через сеть.</p>
+      <p class="note">Двигайте скорость чтения. При нуле окно закрывается: отправитель ждёт и время от времени шлёт пробу. В <code>ss -tn</code> это видно как растущий <code>Recv-Q</code> у получателя и <code>Send-Q</code> у отправителя.</p>
+    </div>
+    <div class="demo" data-demo="rwnd"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Контроль перегрузки</h2>
+      <p class="lead">Окно получателя защищает получателя, а окно перегрузки <code>cwnd</code> — сеть. Отправитель не знает ширину канала и нащупывает её: в пути не больше <code>min(cwnd, win)</code>.</p>
+      <ul class="points">
+        <li>Медленный старт: с 10 сегментов, каждый RTT — вдвое больше.</li>
+        <li>После порога — +1 сегмент за RTT (аддитивный рост).</li>
+        <li>Потеря — сигнал перегрузки: окно вдвое меньше (мультипликативное снижение). Таймаут — с нуля.</li>
+      </ul>
+      <p class="note">Здесь Reno. В Linux по умолчанию CUBIC (снижает до 0,7 и растёт по кубической кривой), есть BBR — он ориентируется на измеренные RTT и полосу, а не на потери.</p>
+    </div>
+    <div class="demo" data-demo="cwnd"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Задержка против ширины канала</h2>
+      <p class="lead">Канал — труба: ширина — сколько бит в секунду, длина — RTT. Чтобы заполнить трубу, в полёте должно быть <b>произведение полосы на задержку</b> (BDP). Пока окно меньше BDP, скорость — <code>окно / RTT</code>, а не полоса.</p>
+      <p class="note">Ответ API в 20 КБ загружается почти одинаково по каналу 10 Мбит/с и 10 Гбит/с: всё время уходит на круги RTT. Двигайте ползунки.</p>
+    </div>
+    <div class="demo" data-demo="bdp"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервер в другом полушарии, RTT 150 мс, канал 1 Гбит/с. Сколько примерно займёт загрузка 100 КБ по новому HTTPS-соединению (TLS 1.3, адрес уже в кэше DNS)?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Около 1 мс: 100 КБ при гигабите — это 0,8 мс</button>
+      <button class="opt text">Около 150 мс: один RTT</button>
+      <button class="opt text" data-correct>Около 750 мс: пять RTT</button>
+      <button class="opt text">Около 3 секунд</button>
+      <div class="explain">TCP-рукопожатие — 1 RTT, TLS 1.3 — ещё 1, запрос с первым окном ответа — 1. 100 КБ — это ~70 сегментов, а начальное окно 10: дальше 20 и 40 — ещё два круга. Итого 5 × 150 = 750 мс, из них передача битов — меньше миллисекунды. Лечится переиспользованием соединений, CDN рядом с пользователем и меньшим числом последовательных запросов.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сколько кругов до ответа</h2>
+      <p class="lead">Новое HTTPS-соединение: TCP — 1 RTT, TLS 1.2 — ещё 2, TLS 1.3 — ещё 1 (ключи отправляются сразу в ClientHello). Только потом запрос. QUIC совмещает транспорт и TLS: 1 RTT, при возобновлении — 0.</p>
+      <p class="note">HTTP/1.1 на одном соединении — один запрос за раз, браузер открывает до 6 соединений. HTTP/2 и HTTP/3 мультиплексируют все запросы в одном. Переиспользованное соединение (keep-alive, пул) стоит только RTT самого запроса.</p>
+    </div>
+    <div class="demo" data-demo="rtt"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Блокировка очереди: HTTP/2 и QUIC</h2>
+      <p class="lead">HTTP/2 гонит несколько потоков через одно TCP-соединение. Но TCP отдаёт приложению байты строго по порядку: потерян один сегмент — ждут все потоки, даже чьи данные уже пришли.</p>
+      <p class="note">QUIC нумерует пакеты сам и знает, где какой поток: потеря тормозит только свой. На мобильной сети с потерями это заметная разница. Запустите передачу в обоих режимах.</p>
+    </div>
+    <div class="demo" data-demo="hol"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Nagle и отложенный ACK</h2>
+      <p class="lead">Алгоритм Нейгла не отправляет маленький сегмент, пока предыдущий не подтверждён. Получатель же не спешит с ACK: ждёт до 40 мс (Linux) в надежде отправить его вместе с ответом. Вместе они дают паузу на ровном месте.</p>
+      <p class="note">Типичный случай: заголовок и тело — двумя <code>write()</code>. <code>TCP_NODELAY</code> отключает Нейгла: Go ставит его по умолчанию, Node — для HTTP; в Python и Java сокет создаётся с Нейглом. Лучше всего — одна запись буфером.</p>
+    </div>
+    <div class="demo" data-demo="nagle"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Сокеты: что делает ядро</h2>
+      <p class="lead">Сокет — файловый дескриптор, за которым в ядре стоят очереди и буферы. Рукопожатие ядро делает само, без вашего кода. <code>read</code> и <code>write</code> лишь копируют байты между вашей памятью и буферами ядра.</p>
+      <p class="note">Выполняйте вызовы по одному. Неблокирующие сокеты и epoll — в <a href="/async-io/">презентации про асинхронный ввод-вывод</a>.</p>
+    </div>
+    <div class="demo" data-demo="sockapi"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Очередь accept</h2>
+      <p class="lead">Готовые соединения ждут в очереди, пока приложение не вызовет <code>accept()</code>. Её длина — <code>backlog</code> из <code>listen()</code>, но не больше <code>net.core.somaxconn</code> (4096 с ядра 5.4).</p>
+      <p class="note">Очередь полна — ядро молча отбрасывает SYN и последний ACK рукопожатия. Клиент повторит SYN через 1 с, потом через 2 с: задержка соединения прыгает на секунды. Счётчик — <code>nstat -az TcpExtListenOverflows</code>, длина очереди — <code>ss -lnt</code> (Recv-Q / Send-Q). Замедлите приложение.</p>
+    </div>
+    <div class="demo" data-demo="backlog"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Порты, TIME_WAIT и пулы</h2>
+      <p class="lead">Соединение — четвёрка: адрес и порт клиента, адрес и порт сервера. К одному <code>ip:port</code> клиент может открыть столько соединений, сколько у него эфемерных портов: в Linux <code>32768–60999</code>, это 28 232.</p>
+      <p class="note">Закрытое клиентом соединение 60 секунд держит порт в TIME_WAIT — чтобы опоздавшие пакеты не попали в новое соединение с той же четвёркой. Новое соединение на каждый запрос упирается в <code>cannot assign requested address</code>. Пул соединений решает и это, и цену рукопожатий.</p>
+    </div>
+    <div class="demo" data-demo="ports"></div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">На HTTP-сервере <code>ss -s</code> показывает 40 000 соединений в <code>TIME_WAIT</code>. Что это значит?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Клиенты не закрывают соединения</button>
+      <button class="opt text" data-correct>Сервер сам закрывает соединения первым — например, без keep-alive или по таймауту</button>
+      <button class="opt text">Сервер не успевает вызывать accept()</button>
+      <button class="opt text">Сеть теряет пакеты FIN</button>
+      <div class="explain">В TIME_WAIT попадает тот, кто первым отправил FIN. На сервере это обычно безвредно: все четвёрки разные, свои порты он не тратит, запись в ядре — пара сотен байт. Но это подсказка: соединения не переиспользуются, и каждый запрос платит за рукопожатие. Опасен TIME_WAIT на клиенте, который бьёт в один адрес, — там кончаются порты.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li><code>curl -w</code> раскладывает время запроса: DNS, TCP, TLS, первый байт. Сразу видно, что съело время.</li>
+        <li><code>ss -tni</code> — соединения со всеми внутренностями: состояние, очереди, <code>cwnd</code>, <code>rtt</code>, ретрансмиты.</li>
+        <li><code>tcpdump</code> пишет пакеты, Wireshark их разбирает и рисует seq/ack.</li>
+        <li><code>dig +trace</code> проходит цепочку DNS. <code>mtr</code> — traceroute с потерями на каждом шаге.</li>
+        <li><code>nstat</code> — счётчики ядра: ретрансмиты, переполнения очередей, сбросы.</li>
+      </ul>
+      <p class="note">Если запрос «иногда висит ровно 1 или 3 секунды» — ищите потерянный SYN. «Ровно 40 мс» — Нейгл с отложенным ACK. «Ровно 5 секунд» — таймаут DNS-запроса.</p>
+    </div>
+<pre class="code"><code class="lang-plain">
+$ curl -so /dev/null https://example.com -w \
+  'dns %{time_namelookup} tcp %{time_connect} \
+tls %{time_appconnect} ttfb %{time_starttransfer}\n'
+dns 0.012 tcp 0.098 tls 0.187 ttfb 0.281
+
+$ ss -tni state established dst :443
+ESTAB 0 0 10.0.0.5:51544 93.184.215.14:443
+  cubic rtt:86.2/1.4 cwnd:10 retrans:0/2 ...
+
+$ ss -lnt sport :8080        # очередь accept
+State  Recv-Q Send-Q Local Address:Port
+LISTEN 129    128    0.0.0.0:8080
+
+$ nstat -az | grep -E 'Retrans|ListenOverflows'
+$ sudo tcpdump -ni any 'tcp port 443' -c 20
+$ dig +trace example.com
+$ mtr -rwc 50 example.com
+</code></pre>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Пакет — матрёшка заголовков, в кадре ~1,4 КБ данных. NAT держит таблицу с таймаутами, DNS — цепочка кэшей с TTL.</li>
+      <li>TCP — поток байтов с номерами, а не сообщения. Порядок и повторы стоят задержки, и одна потеря тормозит всё за ней.</li>
+      <li>Скорость ограничена окнами: получателя и перегрузки. Для маленьких ответов решают круги RTT, а не полоса.</li>
+      <li>Рукопожатие — ядро, <code>write</code> — копия в буфер, а не доставка. Медленный <code>accept</code> — потерянные SYN и секундные задержки.</li>
+      <li>Переиспользуйте соединения: пул убирает рукопожатия, TIME_WAIT и нехватку портов.</li>
+    </ul>
+    <p class="proverb">Проблемы с полосой решаются деньгами. С задержкой сложнее: скорость света не купишь.<cite>Стюарт Чешир, «It’s the Latency, Stupid»</cite></p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-tcp.js"></script>
+<script src="demos-sock.js"></script>
+</body>
+</html>

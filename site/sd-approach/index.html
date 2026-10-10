@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Системный дизайн: как подходить к задаче — интерактивная презентация</title>
+  <meta name="description" content="Как устроено интервью по системному дизайну, требования, оценки на салфетке, доступность и SLO, перцентили, закон Литтла и очереди, API и модель данных.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-sd" aria-hidden="true">
+      <svg viewBox="0 0 320 300">
+        <defs><marker id="hs-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#13293d"/></marker></defs>
+        <g class="hs-edges" stroke="#13293d" stroke-width="2" fill="none" marker-end="url(#hs-arr)">
+          <path d="M60 150H96"/>
+          <path d="M150 150L176 92"/><path d="M150 150H176"/><path d="M150 150L176 208"/>
+          <path d="M236 92L262 66"/><path d="M236 150L262 150"/><path d="M236 208L262 234"/>
+        </g>
+        <rect x="8" y="128" width="52" height="44" rx="8" fill="#fff" stroke="#13293d" stroke-width="2"/>
+        <text x="34" y="155" text-anchor="middle">клиент</text>
+        <rect x="98" y="122" width="52" height="56" rx="8" fill="#13293d"/>
+        <text x="124" y="155" text-anchor="middle" fill="#fff">LB</text>
+        <rect x="178" y="74" width="58" height="36" rx="7" fill="#3b5bdb"/>
+        <rect x="178" y="132" width="58" height="36" rx="7" fill="#3b5bdb"/>
+        <rect x="178" y="190" width="58" height="36" rx="7" fill="#3b5bdb"/>
+        <text x="207" y="97" text-anchor="middle" fill="#fff">app</text>
+        <text x="207" y="155" text-anchor="middle" fill="#fff">app</text>
+        <text x="207" y="213" text-anchor="middle" fill="#fff">app</text>
+        <rect x="264" y="44" width="50" height="36" rx="7" fill="#ce3262"/>
+        <text x="289" y="67" text-anchor="middle" fill="#fff">cache</text>
+        <g fill="#e3e9fc" stroke="#2a43a8" stroke-width="2">
+          <path d="M264 136v28c0 6 50 6 50 0v-28"/><ellipse cx="289" cy="136" rx="25" ry="6"/>
+          <path d="M264 220v28c0 6 50 6 50 0v-28"/><ellipse cx="289" cy="220" rx="25" ry="6"/>
+        </g>
+        <text x="289" y="160" text-anchor="middle">db</text>
+        <text x="289" y="244" text-anchor="middle">shard</text>
+        <text class="hs-num" x="98" y="40">10⁵ с/сутки</text>
+        <text class="hs-num" x="8" y="282">p99 · QPS · 99,99%</text>
+      </svg>
+    </div>
+    <div class="stack">
+      <h1>Системный дизайн: как подходить к задаче</h1>
+      <p class="lead">Как устроено интервью, какие вопросы задать в начале, как за пять минут прикинуть нагрузку и почему важны не средние, а хвосты. Первая часть серии.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>45 минут: что оценивают и как их потратить</h2>
+      <p class="lead">Правильного ответа нет. Смотрят на ход мысли: умеете ли вы сузить расплывчатую задачу, прикинуть масштаб, собрать работающую схему, углубиться в самое сложное место и честно назвать компромиссы.</p>
+      <p class="note">Для уровня senior и выше главный сигнал — вы ведёте разговор сами, а не ждёте вопросов. Нажмите на этап или двигайте ползунок времени.</p>
+    </div>
+    <div class="demo" data-demo="timeline"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Требования определяют архитектуру</h2>
+      <ul class="points">
+        <li><b>Функциональные</b> — что система делает: создать короткую ссылку, перейти по ней, посмотреть статистику. Возьмите 3–4 главных сценария, остальное явно вынесите за рамки.</li>
+        <li><b>Нефункциональные</b> — какой она должна быть: масштаб, задержка, доступность, согласованность, долговечность. Именно они превращают «сервис и база» в настоящую архитектуру.</li>
+      </ul>
+      <p class="note">Пример — сокращатель ссылок. Включайте требования и смотрите, какие компоненты и решения из них следуют.</p>
+    </div>
+    <div class="demo" data-demo="nfr"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Задача: «Спроектируйте ленту новостей, как в Twitter». У вас есть время на один уточняющий вопрос. Какой сильнее всего изменит архитектуру?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Сколько пользователей заходят в день?</button>
+      <button class="opt text" data-correct>Сколько подписчиков у самых популярных авторов?</button>
+      <button class="opt text">Какую базу данных у вас принято использовать?</button>
+      <button class="opt text">Нужна ли в ленте реклама?</button>
+      <div class="explain">Число пользователей меняет количество серверов, но не устройство схемы. А максимум подписчиков решает, как строить ленту. Если у всех до тысячи подписчиков, пост при публикации раскладывают по лентам подписчиков (fan-out on write), и чтение ленты — один запрос. Автору с 50 млн подписчиков пришлось бы сделать 50 млн записей на каждый пост, поэтому для «звёзд» ленту собирают при чтении. На практике — гибрид.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Числа для оценок в уме</h2>
+    <div class="nums">
+      <div class="stack">
+        <table class="ntable">
+          <tr><th colspan="2">Время и объёмы</th></tr>
+          <tr><td>сутки</td><td>86 400 с ≈ <b>10⁵ с</b></td></tr>
+          <tr><td>год</td><td>≈ 3·10⁷ с</td></tr>
+          <tr><td>1 млн событий в сутки</td><td>≈ <b>12 в секунду</b></td></tr>
+          <tr><td>1 млрд в сутки</td><td>≈ 12 тыс. в секунду</td></tr>
+          <tr><td>2¹⁰ / 2²⁰ / 2³⁰ / 2⁴⁰</td><td>≈ тысяча / миллион / миллиард / триллион — КБ, МБ, ГБ, ТБ</td></tr>
+          <tr><td>UUID, timestamp, int64</td><td>16 / 8 / 8 байт</td></tr>
+          <tr><td>строка в таблице</td><td>100 Б – 1 КБ с индексами</td></tr>
+          <tr><td>пик к среднему</td><td>обычно ×2–×3, распродажи и события — ×10</td></tr>
+        </table>
+      </div>
+      <div class="stack">
+        <table class="ntable">
+          <tr><th colspan="2">Что держит один узел (порядок величины)</th></tr>
+          <tr><td>сервис на Go/Java, 16 ядер</td><td>10–50 тыс. rps на простом эндпоинте, 1–5 тыс. с логикой и походами в базу</td></tr>
+          <tr><td>PostgreSQL</td><td>чтения по индексу — десятки тыс./с, запись — <b>5–20 тыс. транзакций/с</b>, комфортно до единиц ТБ</td></tr>
+          <tr><td>Redis</td><td><b>~100 тыс. операций/с</b> на ядро, ответ &lt; 1 мс, объём — сколько RAM</td></tr>
+          <tr><td>Kafka</td><td>брокер — сотни МБ/с; партиция — единицы–десятки МБ/с</td></tr>
+          <tr><td>сервер</td><td>32–128 ядер, 256 ГБ – 1 ТБ RAM, сеть 10–25 Гбит/с (1–3 ГБ/с)</td></tr>
+          <tr><td>NVMe SSD / HDD</td><td>сотни тысяч IOPS и 3–7 ГБ/с / 100–200 IOPS</td></tr>
+        </table>
+        <p class="note">Это ориентиры, а не обещания: реальная цифра зависит от запросов, размера данных и железа. На интервью важна не точность, а порядок: 100 или 100 000 записей в секунду — разные системы. Как устроены эти технологии — <a href="/backend-stack/">в презентации про серверный стек</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Оценка на салфетке</h2>
+      <p class="lead">Цель — понять, какой класс системы нужен: хватит ли одной базы с репликами, нужен ли кэш, шардирование, CDN. Считайте круглыми числами и сразу говорите вывод.</p>
+      <ul class="points">
+        <li>Запись: DAU × действия ÷ 10⁵ с, пик — ×2–3.</li>
+        <li>Чтения: запись × соотношение чтение/запись.</li>
+        <li>Хранение: записи в сутки × размер × 365 × годы × 3 копии.</li>
+      </ul>
+      <p class="note">Выберите пример или двигайте ползунки. Ёмкость узлов — со слайда с числами.</p>
+    </div>
+    <div class="demo" data-demo="estimate"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Задержки, которые нужно помнить</h2>
+      <p class="lead">Разница между уровнями — порядки. Поход в другой дата-центр стоит как сто тысяч обращений к памяти. Отсюда правила: держите горячие данные в памяти, не ходите в сеть в цикле, не пересекайте океан на каждом запросе.</p>
+      <p class="note">Как устроена иерархия памяти внутри процессора — <a href="/cpu/#9">в презентации про процессор</a>. Цифры типичны для серверов в 2020-х.</p>
+    </div>
+    <div class="lat" role="table" aria-label="Типичные задержки">
+      <div class="lat-row"><span>обращение к RAM</span><b>100 нс</b><i style="--w:12.5%"></i></div>
+      <div class="lat-row"><span>сжать 1 КБ (Snappy/LZ4)</span><b>2 мкс</b><i style="--w:29%"></i></div>
+      <div class="lat-row"><span>прочитать 1 МБ из RAM</span><b>50 мкс</b><i style="--w:46%"></i></div>
+      <div class="lat-row"><span>случайное чтение NVMe</span><b>20–100 мкс</b><i style="--w:47%"></i></div>
+      <div class="lat-row"><span>круг по сети в зоне</span><b>0,1–0,5 мс</b><i style="--w:56%"></i></div>
+      <div class="lat-row"><span>GET из Redis с сетью</span><b>0,2–1 мс</b><i style="--w:59%"></i></div>
+      <div class="lat-row"><span>запрос в Postgres по индексу</span><b>0,5–2 мс</b><i style="--w:62%"></i></div>
+      <div class="lat-row"><span>между зонами одного региона</span><b>1–2 мс</b><i style="--w:65%"></i></div>
+      <div class="lat-row"><span>поиск на HDD</span><b>5–10 мс</b><i style="--w:73%"></i></div>
+      <div class="lat-row"><span>Москва ↔ Франкфурт</span><b>~40 мс</b><i style="--w:82%"></i></div>
+      <div class="lat-row"><span>Европа ↔ США (восток)</span><b>~80 мс</b><i style="--w:86%"></i></div>
+      <div class="lat-row"><span>новое TLS-соединение через океан</span><b>~250 мс</b><i style="--w:92%"></i></div>
+      <p class="note">Полоса — логарифмическая шкала: каждый шаг вправо — примерно ×10.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Доступность: сколько стоит каждая девятка</h2>
+      <p class="lead">Доступность — доля времени (или запросов), когда система отвечает правильно. Каждая девятка уменьшает допустимый простой в 10 раз — и обычно в разы увеличивает стоимость.</p>
+      <p class="note">Двигайте ползунок. Обратите внимание, где кончаются ручные действия: при четырёх девятках дежурный не успевает даже открыть ноутбук.</p>
+    </div>
+    <div class="demo" data-demo="nines"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Зависимости умножают доступность</h2>
+      <ul class="points">
+        <li><b>Последовательно</b> — запрос нужен каждому компоненту: доступности перемножаются. Пять компонентов по 99,9% дают 99,5%.</li>
+        <li><b>Параллельно</b> — хватит любой из n копий: недоступность перемножается, 1 − (1 − a)ⁿ. Две копии по 99% дают 99,99%.</li>
+        <li><b>Мягкая зависимость</b> — без неё система деградирует, но отвечает: кэш упал — читаем из базы, рекомендации не пришли — показываем популярное.</li>
+      </ul>
+      <p class="note">Добавляйте копии и делайте зависимости мягкими. Формула верна только для независимых отказов: копии в одной зоне, с одним конфигом и одним релизом падают вместе.</p>
+    </div>
+    <div class="demo" data-demo="avail"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>SLI, SLO, SLA и бюджет ошибок</h2>
+      <ul class="points">
+        <li><b>SLI</b> — что измеряем: доля успешных запросов, доля ответов быстрее 300 мс.</li>
+        <li><b>SLO</b> — внутренняя цель: 99,9% успешных за 30 дней.</li>
+        <li><b>SLA</b> — обещание клиенту с компенсацией, всегда слабее SLO: например 99,5%.</li>
+        <li><b>Бюджет ошибок</b> = 1 − SLO. Пока он есть, можно рисковать и выкатывать. Кончился — заморозка фич, чиним надёжность.</li>
+      </ul>
+      <p class="note">Сервис получает 1 000 запросов в секунду. Выберите SLO и устраивайте инциденты.</p>
+    </div>
+    <div class="demo" data-demo="budget"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Перцентили, а не среднее</h2>
+      <p class="lead">p99 = 120 мс значит: 99% запросов быстрее 120 мс, а каждый сотый — медленнее. Среднее прячет хвост: редкие паузы GC почти не двигают его, но именно их видит пользователь.</p>
+      <p class="note">Медленные запросы часто достаются самым ценным клиентам: у них больше данных. Добавьте паузы GC и промахи кэша и посмотрите, что сдвинется.</p>
+    </div>
+    <div class="demo" data-demo="percentiles"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Хвост растёт при веерных запросах</h2>
+      <p class="lead">Если страница ждёт N параллельных вызовов, она медленная, когда медленный хоть один: P = 1 − (1 − p)ⁿ. Редкий для одного сервиса хвост становится нормой для пользователя.</p>
+      <p class="note">Лечение: меньше вызовов на запрос, таймауты с частичным ответом, хеджированные запросы — копия запроса на другую реплику, если первая не ответила за p95 (подробнее — в «The Tail at Scale», Dean и Barroso). Нажимайте «Запрос» или прогоните тысячу.</p>
+    </div>
+    <div class="demo" data-demo="fanout"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Страница собирается из 100 параллельных вызовов к разным сервисам. У каждого p99 = 50 мс, вызовы независимы. Какая доля открытий страницы займёт больше 50 мс?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">1%: перцентиль не меняется</button>
+      <button class="opt text">Около 10%</button>
+      <button class="opt text" data-correct>Около 63%</button>
+      <button class="opt text">Все 100%</button>
+      <div class="explain">1 − 0,99¹⁰⁰ ≈ 0,634. Каждый вызов быстрый с вероятностью 0,99, и все сто должны быть быстрыми. Поэтому для сервиса, в который ходят веером, целятся в p99,9 и p99,99, а не в p99.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Закон Литтла</h2>
+      <p class="lead">Среднее число запросов в системе = пропускная способность × время ответа: <b>L = λ·W</b>. Верно для любой устойчивой системы — пула соединений, воркеров, очереди.</p>
+      <ul class="points">
+        <li>1 000 rps при 200 мс — в каждый момент обрабатывается 200 запросов: нужно 200 потоков или соединений.</li>
+        <li>Пул ограничивает пропускную способность: 20 соединений к базе при запросе 5 мс — не больше 4 000 запросов/с.</li>
+      </ul>
+      <p class="note">Двигайте ползунки. Попробуйте замедлить запрос к базе с 5 до 50 мс — так выглядит инцидент «база стала медленнее, и упал весь сервис».</p>
+    </div>
+    <div class="demo" data-demo="little"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Очереди: почему 90% загрузки — это много</h2>
+      <p class="lead">Запросы приходят неравномерно. Даже если сервер в среднем успевает, в моменты скопления образуется очередь. Для простейшей модели (M/M/1) среднее время ответа T = S / (1 − ρ), где S — время обработки, ρ — загрузка.</p>
+      <p class="note">50% загрузки — ответ вдвое дольше обработки, 90% — в 10 раз, 99% — в 100. Поэтому мощности планируют с запасом и держат загрузку на 50–70%. Двигайте ползунок загрузки и смотрите на очередь.</p>
+    </div>
+    <div class="demo" data-demo="queue"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Сервис загружен на 80%. Обработка запроса — 10 мс, среднее время ответа с очередью — 50 мс. Трафик вырос на 10%, загрузка стала 88%. Каким станет среднее время ответа?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">≈ 55 мс: трафик вырос на 10%</button>
+      <button class="opt text" data-correct>≈ 83 мс</button>
+      <button class="opt text">≈ 500 мс: очередь уходит в бесконечность</button>
+      <button class="opt text">Не изменится: запас ещё 12%</button>
+      <div class="explain">T = S / (1 − ρ): при 80% это 10 / 0,2 = 50 мс, при 88% — 10 / 0,12 ≈ 83 мс. Плюс 10% трафика дали плюс 66% к задержке. Чем ближе к 100%, тем круче кривая: ещё 10% — и будет уже 10 / 0,03 ≈ 330 мс.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>От простой схемы к углублению</h2>
+      <ul class="points">
+        <li>Сначала самая простая схема, которая выполняет функциональные требования. Пройдите по ней путь записи и путь чтения.</li>
+        <li>Потом каждый компонент добавляйте ради конкретного требования или числа из оценки — и говорите это вслух.</li>
+        <li>Углубляйтесь в 1–2 самых сложных места. В конце — где сломается при ×10 и какие компромиссы приняты.</li>
+      </ul>
+      <p class="note">Хорошая схема: потоки данных подписаны стрелками, запись и чтение различимы, у хранилищ указан ключ. Нажимайте «Дальше».</p>
+    </div>
+    <div class="demo" data-demo="design"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>API: коротко, но с главным</h2>
+      <ul class="points">
+        <li><b>REST/JSON</b> — для внешних клиентов и браузера. <b>gRPC</b> — между сервисами: схема, бинарный формат, стриминг.</li>
+        <li><b>Пагинация курсором</b>: <code>?after=&lt;id&gt;&amp;limit=50</code>. <code>OFFSET 100000</code> заставляет базу прочитать и выбросить 100 тысяч строк, а при вставках страницы съезжают.</li>
+        <li><b>Ключ идемпотентности</b> для всего, что меняет деньги и состояние: клиент генерирует ключ, сервер запоминает результат и на повтор отвечает тем же.</li>
+      </ul>
+      <p class="note">Сеть может потерять ответ, и клиент не знает, выполнилась ли операция. Повторять обязательно — значит повтор должен быть безопасным. Включайте и выключайте ключ и отправляйте платёж.</p>
+    </div>
+    <div class="demo" data-demo="idem"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Сначала модель данных</h2>
+      <p class="lead">Выбор базы следует из запросов, а не наоборот. Выпишите сущности и главные шаблоны доступа: по какому ключу читаем, что сортируем, что пишется чаще всего. Ключ определит и индексы, и будущий ключ шардирования.</p>
+      <ul class="points">
+        <li>Чат: «последние 50 сообщений чата» → ключ <code>(chat_id, id)</code>, шард по <code>chat_id</code>: весь чат на одном узле.</li>
+        <li>Связи многие-ко-многим, транзакции, отчёты — реляционная база. Огромная запись по одному ключу — колоночные KV вроде Cassandra.</li>
+      </ul>
+      <p class="note">Про выбор хранилища, шардирование и репликацию — <a href="/sd-data/">в третьей части серии</a>.</p>
+    </div>
+<pre class="code"><code class="lang-sql">
+-- шаблон доступа: последние сообщения чата
+create table messages (
+  chat_id    bigint      not null,
+  id         bigint      not null, -- растёт со временем (Snowflake)
+  author_id  bigint      not null,
+  body       text        not null,
+  created_at timestamptz not null default now(),
+  primary key (chat_id, id)
+);
+
+-- страница истории — курсором по ключу
+select id, author_id, body from messages
+ where chat_id = $1 and id &lt; $2
+ order by id desc
+ limit 50;
+</code></pre>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Что замечает интервьюер</h2>
+    <div class="fit">
+      <div class="fit-col">
+        <h3>Сильные сигналы</h3>
+        <ul>
+          <li>Уточнил требования и записал их, прежде чем рисовать.</li>
+          <li>Числа из оценки повлияли на решения: «12 тыс. записей/с — одна база не справится».</li>
+          <li>Каждый компонент обоснован, у каждого решения назван компромисс.</li>
+          <li>Сам нашёл единые точки отказа и узкие места.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Красные флаги</h3>
+        <ul>
+          <li>Сразу рисует кубики или называет технологии без причин: «возьмём Kafka».</li>
+          <li>Шардирование и микросервисы для 100 запросов в секунду.</li>
+          <li>«Будет быстро, строго согласованно и всегда доступно» — без компромиссов.</li>
+          <li>Молчит, не следит за временем, спорит с подсказками интервьюера.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это применять на практике</h2>
+      <ul class="points">
+        <li>На интервью: выпишите в углу доски требования и числа — и возвращайтесь к ним при каждом решении.</li>
+        <li>Ёмкость узла измеряют, а не берут из таблиц: нагрузочный тест (k6, wrk, vegeta) до точки, где p99 начинает расти.</li>
+        <li>Латентность — гистограммы, а не средние. Перцентили нельзя усреднять между серверами: считают по объединённой гистограмме.</li>
+        <li>Алерты — по скорости сжигания бюджета ошибок, а не по каждой ошибке.</li>
+        <li>Загрузку держат с запасом: следите за насыщением — очередями, ожиданием пула, run queue.</li>
+      </ul>
+    </div>
+    <div class="stack">
+<pre class="code"><code class="lang-plain">
+# p99 по всем экземплярам сервиса (Prometheus)
+histogram_quantile(0.99,
+  sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
+
+# доля ошибок за час против бюджета SLO 99,9%
+sum(rate(http_requests_total{code=~"5.."}[1h]))
+  / sum(rate(http_requests_total[1h])) / 0.001
+
+# нагрузочный тест: 2000 rps, смотрим p99
+$ vegeta attack -rate=2000 -duration=60s &lt; targets | vegeta report
+</code></pre>
+      <p class="note">Второе выражение — скорость сжигания: 1 значит, что бюджета хватит ровно на 30 дней, 14,4 за час — что месячный бюджет кончится за двое суток. На такое будят дежурного.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Интервью проверяет ход мысли: требования → оценки → API и данные → схема → углубление → компромиссы.</li>
+      <li>Нефункциональные требования и числа решают, какая нужна архитектура. Считайте порядками: сутки ≈ 10⁵ секунд.</li>
+      <li>Доступности последовательных зависимостей перемножаются. Копии и мягкие зависимости — способ получить больше девяток, чем у любой части.</li>
+      <li>Смотрите на p99 и выше: при веерных запросах хвост одного сервиса становится нормой для пользователя.</li>
+      <li>L = λ·W ограничивает пулы, а очередь взрывается у 100% загрузки — держите запас.</li>
+    </ul>
+    <p class="proverb">Каждое решение — компромисс. Назовите его вслух.</p>
+    <p class="note">Дальше — <a href="/sd-scaling/">масштабирование: балансировка, кэши, CDN и шардирование</a>.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-2.js"></script>
+</body>
+</html>

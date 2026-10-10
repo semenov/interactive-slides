@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Как процессор выполняет код — интерактивная презентация</title>
+  <meta name="description" content="Инструкции и регистры, конвейер, предсказание переходов, внеочередное исполнение, кэши и кэш-линии, префетч, false sharing, SIMD — и что из этого следует для кода на Python, Go, Java и JS.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <svg class="hero-chip" viewBox="0 0 320 320" aria-hidden="true">
+      <g class="pins">
+        <path d="M70 18v22M100 18v22M130 18v22M160 18v22M190 18v22M220 18v22M250 18v22M70 280v22M100 280v22M130 280v22M160 280v22M190 280v22M220 280v22M250 280v22M18 70h22M18 100h22M18 130h22M18 160h22M18 190h22M18 220h22M18 250h22M280 70h22M280 100h22M280 130h22M280 160h22M280 190h22M280 220h22M280 250h22"/>
+      </g>
+      <rect class="pkg" x="40" y="40" width="240" height="240" rx="14"/>
+      <g class="core"><rect x="56" y="56" width="96" height="78" rx="6"/><rect class="l1" x="64" y="64" width="38" height="16" rx="3"/><rect class="l2" x="64" y="108" width="80" height="18" rx="3"/><text x="122" y="77">ядро</text><text class="dim" x="83" y="77">L1</text><text class="dim" x="104" y="121">L2</text></g>
+      <g class="core"><rect x="168" y="56" width="96" height="78" rx="6"/><rect class="l1" x="176" y="64" width="38" height="16" rx="3"/><rect class="l2" x="176" y="108" width="80" height="18" rx="3"/><text x="234" y="77">ядро</text><text class="dim" x="195" y="77">L1</text><text class="dim" x="216" y="121">L2</text></g>
+      <rect class="l3" x="56" y="142" width="208" height="36" rx="6"/><text class="l3t" x="160" y="165">L3 — общий кэш</text>
+      <g class="core"><rect x="56" y="186" width="96" height="78" rx="6"/><rect class="l2" x="64" y="194" width="80" height="18" rx="3"/><rect class="l1" x="64" y="240" width="38" height="16" rx="3"/><text x="122" y="253">ядро</text><text class="dim" x="83" y="253">L1</text><text class="dim" x="104" y="207">L2</text></g>
+      <g class="core"><rect x="168" y="186" width="96" height="78" rx="6"/><rect class="l2" x="176" y="194" width="80" height="18" rx="3"/><rect class="l1" x="176" y="240" width="38" height="16" rx="3"/><text x="234" y="253">ядро</text><text class="dim" x="195" y="253">L1</text><text class="dim" x="216" y="207">L2</text></g>
+    </svg>
+    <div class="stack">
+      <h1>Как процессор выполняет код</h1>
+      <p class="lead">Инструкции и регистры, конвейер, предсказание переходов, кэши и кэш-линии. Почему один и тот же цикл бывает быстрее в десять раз — и что это значит для кода на Python, Go, Java и JS.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки. Предыдущая тема — <a href="/data-in-memory/">данные в памяти</a>, следующая — <a href="/compilers-runtimes/">компиляторы и рантаймы</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Инструкции и регистры</h2>
+      <p class="lead">Процессор не знает ни Python, ни Go. Он умеет простые операции: загрузить число из памяти, сложить, сравнить, перейти по адресу. Каждая — это инструкция длиной от 1 до 15 байт (x86-64) или ровно 4 байта (ARM64).</p>
+      <ul class="points">
+        <li>Регистры — ячейки по 64 бита прямо в ядре: у x86-64 их 16 общего назначения (<code>rax</code>, <code>rcx</code>, <code>rsi</code>…), у ARM64 — 31. Читаются за такт.</li>
+        <li>Всё остальное — в памяти, и к ней нужно обращаться отдельной загрузкой.</li>
+        <li><code>rip</code> — адрес следующей инструкции, флаги — итог последнего сравнения или вычисления.</li>
+      </ul>
+    </div>
+    <div class="stack">
+<pre class="code"><code>
+// Go
+for _, x := range a {
+    s += x
+}
+</code></pre>
+<pre class="code"><code class="lang-plain">
+; то же самое после компилятора (x86-64)
+loop:
+  add  rax, [rsi]   ; s += *p: загрузка + сложение
+  add  rsi, 8       ; p++ (int64 — 8 байт)
+  cmp  rsi, rdx     ; дошли до конца?
+  jne  loop         ; нет — прыжок назад
+</code></pre>
+      <p class="note">Посмотреть у себя: <code>go build -gcflags=-S</code>, <code>objdump -d</code>, <a href="https://godbolt.org">godbolt.org</a>. Для Python — <code>python -m dis</code>: там байткод, а не машинный код. Подробнее — в <a href="/compilers-runtimes/">презентации про компиляторы</a>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Выборка, декодирование, исполнение</h2>
+      <p class="lead">Ядро бесконечно повторяет цикл: взять байты по адресу из <code>rip</code>, понять, что это за инструкция, выполнить её и перейти к следующей. Условный переход просто записывает в <code>rip</code> другой адрес.</p>
+      <p class="note">Программа суммирует массив из пяти чисел. Нажимайте «Фаза», чтобы пройти цикл по шагам, или «Инструкция» — сразу целиком. Следите за регистрами, флагом ZF и ячейками памяти.</p>
+    </div>
+    <div class="demo" data-demo="cpu"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Такты, IPC и почему ГГц — не всё</h2>
+      <p class="lead">Время = инструкции ÷ (IPC × частота). IPC — сколько инструкций в среднем завершается за такт. Современное ядро может до 4–8, а на реальном коде бывает и 0,1.</p>
+      <ul class="points">
+        <li>Промах предсказания перехода стоит ~15–20 тактов — он растёт вместе с частотой.</li>
+        <li>Ожидание памяти измеряется в наносекундах: ~80–100 нс до RAM. Чем выше частота, тем больше тактов ядро простаивает.</li>
+        <li>Поэтому код, упирающийся в память, от разгона почти не ускоряется.</li>
+      </ul>
+      <p class="note">Выберите тип нагрузки и двигайте частоту.</p>
+    </div>
+    <div class="demo" data-demo="ipc"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Конвейер</h2>
+      <p class="lead">Пока одна инструкция исполняется, следующая уже декодируется, а третья — выбирается из памяти. Как на сборочной линии: каждая инструкция всё так же проходит пять стадий, но завершается почти каждый такт.</p>
+      <p class="note">Конвейер встаёт, если инструкции нужен результат предыдущей (зависимость по данным). Проброс результата (forwarding) убирает большинство пауз, но значение из памяти всё равно приходит на такт позже. Компилятор переставляет инструкции, чтобы спрятать и эту паузу. Здесь — классический учебный 5-стадийный конвейер; у настоящих ядер стадий 15–20.</p>
+    </div>
+    <div class="demo" data-demo="pipeline"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Суперскалярность и исполнение вне очереди</h2>
+      <p class="lead">Современное ядро выбирает 4–8 инструкций за такт, держит в окне сотни и запускает любую, чьи операнды готовы, — не по порядку программы. Но истинную цепочку зависимостей не ускорит никто.</p>
+<pre class="code"><code>
+// одна цепочка зависимостей
+for _, x := range a { s += x }
+
+// четыре независимые цепочки
+for i := 0; i+3 < len(a); i += 4 {
+    s0 += a[i]; s1 += a[i+1]
+    s2 += a[i+2]; s3 += a[i+3]
+}
+</code></pre>
+      <p class="note">Сложение float64 — 4 такта задержки, но два блока принимают по сложению каждый такт. Компилятор сам так не переставит: для float это меняет результат (нужен <code>-ffast-math</code>). Выберите число аккумуляторов.</p>
+    </div>
+    <div class="demo" data-demo="accum"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Предсказание переходов</h2>
+      <p class="lead">Конвейер не может ждать, пока вычислится условие <code>if</code>: он угадывает направление и выполняет инструкции наперёд. Угадал — переход почти бесплатен. Ошибся — всё начатое выбрасывается: ~15–20 тактов.</p>
+<pre class="code"><code class="lang-c">
+for (int i = 0; i < n; i++)
+    if (data[i] >= 128)   // условный переход
+        sum += data[i];
+</code></pre>
+      <p class="note">Знаменитый пример: на отсортированном массиве цикл в ~6 раз быстрее, чем на случайном. Запустите поток значений и сравните. Современный <code>gcc -O3</code> часто заменяет такой <code>if</code> на инструкцию без перехода (<code>cmov</code>) или SIMD — и разница исчезает.</p>
+    </div>
+    <div class="demo" data-demo="branch"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В горячем цикле миллиард раз выполняется <code>if user.is_admin:</code>. Почти всегда это <code>False</code>. Сколько стоит сам переход?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">~15–20 тактов на каждую проверку: конвейер сбрасывается</button>
+      <button class="opt text" data-correct>Почти ничего: направление всегда одно, предсказатель угадывает</button>
+      <button class="opt text">Зависит от частоты процессора</button>
+      <button class="opt text">Дорого — лучше переписать без <code>if</code>, через арифметику</button>
+      <div class="explain">Дорог только промах предсказания. Переход, который почти всегда идёт в одну сторону, угадывается, и ядро выполняет 1–2 таких перехода за такт. Трюки без ветвлений нужны лишь для непредсказуемых условий в горячем цикле, и то после измерения: <code>perf stat -e branch-misses</code>. А в Python проверка стоит десятки наносекунд по другой причине — из-за интерпретатора.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Иерархия памяти</h2>
+      <p class="lead">Ядро считает быстрее, чем память успевает отвечать. Поэтому между ними — несколько уровней кэша: чем ближе к ядру, тем меньше и быстрее.</p>
+      <p class="note">Типичные значения для сервера на 3 ГГц. Переключите шкалу на «такт = 1 секунда» — и станет понятно, почему промах кэша важнее лишней инструкции, а поход в сеть — важнее всего. Нажмите на уровень, чтобы узнать подробности.</p>
+    </div>
+    <div class="demo" data-demo="latency"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Кэш-линии и локальность</h2>
+      <p class="lead">Кэш хранит не байты, а линии по 64 байта (на Apple M — 128). Прочитали один <code>float64</code> — в кэш пришли ещё семь соседних. Выгодно трогать соседние адреса (пространственная локальность) и повторно — недавние (временная).</p>
+<pre class="code"><code class="lang-c">
+// по строкам: адреса идут подряд
+for (i = 0; i < N; i++)
+  for (j = 0; j < N; j++) sum += m[i][j];
+// по столбцам: шаг N × 8 байт
+for (j = 0; j < N; j++)
+  for (i = 0; i < N; i++) sum += m[i][j];
+</code></pre>
+      <p class="note">Матрица 8×8 из <code>float64</code> хранится по строкам: одна строка — одна линия. Выберите порядок обхода и размер кэша. Настоящий L1 — 512–768 линий, но и матрица 4096×4096 — это 4096 линий на один столбец.</p>
+    </div>
+    <div class="demo" data-demo="matrix"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Массив, список и префетчер</h2>
+      <ul class="points">
+        <li>Массив лежит сплошным куском. Аппаратный префетчер замечает последовательный обход и загружает линии заранее — ядро почти не ждёт.</li>
+        <li>Связный список: адрес следующего узла известен, только когда загружен текущий. Если узлы разбросаны по памяти, каждый шаг — полный поход в RAM.</li>
+        <li>Это же касается <code>[]*T</code> в Go, <code>ArrayList&lt;Integer&gt;</code> в Java, списков объектов в Python и JS: в массиве лежат указатели, а данные — где попало.</li>
+      </ul>
+      <p class="note">Модель: RAM — 100 нс, одна линия в 5 нс по шине, 1 нс работы на элемент. Выберите структуру и запустите обход 64 элементов.</p>
+    </div>
+    <div class="demo" data-demo="prefetch"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В Java сумма 10 млн элементов <code>ArrayList&lt;Integer&gt;</code> считается в несколько раз дольше, чем такого же <code>int[]</code>. Главная причина?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Проверка границ массива при каждом <code>get()</code></button>
+      <button class="opt text">Распаковка <code>Integer</code> создаёт новый объект при каждом чтении</button>
+      <button class="opt text" data-correct>В списке лежат ссылки на отдельные объекты в куче: лишний переход по указателю и в ~5 раз больше памяти</button>
+      <button class="opt text">Вызов <code>get()</code> не встраивается JIT-компилятором</button>
+      <div class="explain"><code>int[]</code> — 40 МБ подряд, префетчер справляется. <code>ArrayList&lt;Integer&gt;</code> — массив ссылок по 4 байта плюс 10 млн объектов по 16 байт, ~200 МБ, и каждое чтение — зависимая загрузка по указателю. Пока объекты лежат в порядке создания, это терпимо, после перемешивания — каждый элемент промах кэша. Проверка границ и <code>get()</code> JIT оптимизирует, а распаковка ничего не создаёт.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Несколько ядер и false sharing</h2>
+      <p class="lead">У каждого ядра свои L1 и L2. Чтобы все видели одинаковые данные, ядра следят друг за другом по протоколу когерентности (MESI): писать в линию может только одно ядро, копии в остальных при этом аннулируются.</p>
+<pre class="code"><code>
+type counter struct {
+    n int64
+    _ [56]byte // до 64 байт: своя линия
+}
+</code></pre>
+      <p class="note">Если два потока пишут в разные переменные одной линии, линия ездит между ядрами по ~50 нс за раз. В Java для этого есть <code>@Contended</code>, в C++ — <code>alignas(64)</code>. Атомики и порядок памяти — в <a href="/concurrency-sync/">презентации про синхронизацию</a>.</p>
+    </div>
+    <div class="demo" data-demo="falseshare"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>SIMD: одна инструкция — много чисел</h2>
+      <ul class="points">
+        <li>Векторные регистры: SSE и ARM NEON — 128 бит (4 × float32), AVX2 — 256 бит (8), AVX-512 — 512 бит (16). Одна инструкция складывает их все.</li>
+        <li>Компиляторы C, C++, Rust векторизуют простые циклы сами (<code>-O3</code>); компилятор Go — почти никогда, векторные пути в его стандартной библиотеке написаны на ассемблере.</li>
+        <li>Готовые векторизованные библиотеки: numpy, simdjson, <code>memchr</code>, <code>strings.Index</code>, хеш-функции, кодеки.</li>
+        <li>Мешают векторизации ветвления в теле цикла, указатели вместо данных и зависимости между итерациями.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <div class="simd" aria-hidden="true">
+        <div class="simd-row"><span class="simd-l">скаляр</span><span class="lanes"><i></i></span><span class="simd-n">1 число за инструкцию</span></div>
+        <div class="simd-row"><span class="simd-l">SSE / NEON</span><span class="lanes"><i></i><i></i><i></i><i></i></span><span class="simd-n">4 × float32</span></div>
+        <div class="simd-row"><span class="simd-l">AVX2</span><span class="lanes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="simd-n">8 × float32</span></div>
+        <div class="simd-row"><span class="simd-l">AVX-512</span><span class="lanes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="simd-n">16 × float32</span></div>
+      </div>
+<pre class="code"><code class="lang-plain">
+; c[i] = a[i] + b[i], по 8 float за раз (AVX2)
+vmovups ymm0, [rsi + rax]
+vaddps  ymm0, ymm0, [rdx + rax]
+vmovups [rdi + rax], ymm0
+add     rax, 32
+</code></pre>
+      <p class="note">Проверить, векторизовался ли цикл: <code>gcc -O3 -fopt-info-vec</code>, <code>clang -Rpass=loop-vectorize</code>, в дизассемблере — регистры <code>xmm</code>/<code>ymm</code>/<code>zmm</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Python и numpy</h2>
+      <p class="lead">Одна итерация <code>s += x</code> в CPython — это разбор байткода, проверка типов обоих операндов, поиск метода сложения, создание нового объекта <code>float</code> и счётчики ссылок: сотни машинных инструкций. numpy делает тот же цикл на C над плотным массивом, с SIMD.</p>
+      <p class="note">Но у вызова numpy есть фиксированная цена — микросекунды на разбор аргументов и подготовку. Двигайте размер массива: на десятке элементов numpy проигрывает обычному циклу. Числа — порядок величин для CPython 3.12 на ядре ~3 ГГц.</p>
+    </div>
+    <div class="demo" data-demo="pyoverhead"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Раскладка данных</h2>
+      <p class="lead">Кэш грузит линию целиком, даже если нужна одна переменная из неё. Структура частицы — 64 байта, а цикл обновляет только координату. Массив структур (AoS) тянет из памяти всё; структура массивов (SoA) — только нужные поля.</p>
+      <p class="note">Так устроены колоночные базы (ClickHouse), pandas и Arrow, ECS в игровых движках. В Java и Python «массив объектов» — вообще массив ссылок на объекты, разбросанные по куче. Выберите раскладку и что делает цикл.</p>
+    </div>
+    <div class="demo" data-demo="soa"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Цикл по numpy-массиву на Python медленный. Его заменили на <code>np.vectorize(f)(a)</code>, где <code>f</code> — обычная функция Python. Насколько быстрее станет?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">В десятки раз: numpy выполнит цикл на C с SIMD</button>
+      <button class="opt text" data-correct>Почти не изменится: <code>f</code> всё равно вызывается интерпретатором для каждого элемента</button>
+      <button class="opt text">В разы: numpy распараллелит вызовы по ядрам</button>
+      <button class="opt text">Станет медленнее в десятки раз</button>
+      <div class="explain"><code>np.vectorize</code> — удобная обёртка над циклом Python, в документации прямо сказано, что ради скорости её не делали. Ускоряет только выражение целиком из операций numpy (<code>a * 2 + 1</code>, <code>np.where</code>) — тогда цикл идёт внутри C-кода. Если так не выразить — Numba, Cython или расширение на C/Rust.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+<pre class="code"><code class="lang-plain">
+$ perf stat -e cycles,instructions,branch-misses,\
+    cache-references,cache-misses ./app
+
+ 3,012,455,120  cycles
+ 9,640,112,004  instructions   # 3.20 insn per cycle
+     2,104,332  branch-misses
+    41,220,118  cache-references
+     1,990,214  cache-misses   # 4.83% of all cache refs
+</code></pre>
+      <ul class="points">
+        <li>IPC ниже 1 — ядро чаще ждёт память, чем считает. Выше 2 — упираетесь в вычисления.</li>
+        <li>Промахов предсказания больше 1–2% от переходов в горячем коде — ищите непредсказуемые условия.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <ul class="points">
+        <li><code>perf record -g</code> + <code>perf report</code> или flame graph — где тратится время; <code>perf annotate</code> — на какой инструкции.</li>
+        <li><code>perf c2c</code> находит false sharing: линии, которые ядра отнимают друг у друга.</li>
+        <li>Go: <code>go test -bench</code> и pprof. Java: async-profiler с <code>-e cache-misses</code>, JMH с <code>-prof perfnorm</code>. Python: py-spy, а с 3.12 — <code>python -X perf</code> для <code>perf</code>. Node: <code>--perf-basic-prof</code>.</li>
+        <li>Размер линии и кэшей: <code>lscpu -C</code>, <code>getconf LEVEL1_DCACHE_LINESIZE</code>; в macOS — <code>sysctl hw.cachelinesize</code>.</li>
+        <li>В контейнере и облачной ВМ счётчики бывают недоступны: <code>perf_event_paranoid</code>, нет PMU в виртуалке.</li>
+      </ul>
+      <p class="note">Сначала измерьте. Микрооптимизации под кэш имеют смысл в горячем цикле, через который идут миллионы элементов, — а не в коде, который ждёт базу.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Процессор исполняет простые инструкции над регистрами. Скорость — это частота × IPC, и IPC важнее.</li>
+      <li>Конвейер и исполнение вне очереди работают, пока есть независимая работа. Длинные цепочки зависимостей и непредсказуемые ветвления их останавливают.</li>
+      <li>Память в сотни раз медленнее ядра. Кэш работает линиями по 64 байта — выигрывает код, который читает данные подряд.</li>
+      <li>Массивы и плотные структуры быстрее указателей и объектов в куче. Раскладка данных важнее мелких оптимизаций кода.</li>
+      <li>Разные ядра не должны писать в одну линию. В Python тяжёлые циклы — внутрь numpy. И всё — после <code>perf stat</code>.</li>
+    </ul>
+    <p class="proverb">Быстрый код — это код, который не ждёт память.</p>
+    <p class="note">Дальше — <a href="/compilers-runtimes/">как компиляторы и рантаймы превращают ваш код в инструкции</a>.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-mem.js"></script>
+</body>
+</html>

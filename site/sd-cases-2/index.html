@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Разбор задач: файлы, такси, поисковый робот, топ-K — интерактивная презентация</title>
+  <meta name="description" content="Четыре классические задачи системного дизайна по схеме интервью: хранилище файлов с синхронизацией, поиск машин рядом, поисковый робот, счётчики просмотров и топ-K.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero" aria-hidden="true">
+      <div class="hero-tile">
+        <svg viewBox="0 0 100 80"><rect x="22" y="6" width="44" height="58" rx="4" fill="#fff" stroke="#13293d" stroke-width="2.5"/><rect x="28" y="14" width="32" height="8" rx="2" fill="#d5dfe7"/><rect x="28" y="25" width="32" height="8" rx="2" fill="#d6336c"/><rect x="28" y="36" width="32" height="8" rx="2" fill="#d5dfe7"/><rect x="28" y="47" width="32" height="8" rx="2" fill="#d5dfe7"/><path d="M74 46v-22m-7 7 7-7 7 7" stroke="#d6336c" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>файлы</span>
+      </div>
+      <div class="hero-tile">
+        <svg viewBox="0 0 100 80"><path d="M10 8h80v64H10zM10 29h80M10 50h80M37 8v64M63 8v64" stroke="#d5dfe7" stroke-width="2" fill="none"/><rect x="37" y="29" width="26" height="21" fill="#fce4ed"/><circle cx="20" cy="18" r="3" fill="#5a6e80"/><circle cx="46" cy="37" r="3" fill="#d6336c"/><circle cx="56" cy="44" r="3" fill="#d6336c"/><circle cx="76" cy="62" r="3" fill="#5a6e80"/><circle cx="72" cy="16" r="3" fill="#5a6e80"/><circle cx="50" cy="40" r="5" fill="#13293d"/></svg>
+        <span>такси</span>
+      </div>
+      <div class="hero-tile">
+        <svg viewBox="0 0 100 80"><path d="M50 40 22 16M50 40 80 14M50 40 18 62M50 40 84 60M50 40 52 8M80 14 92 32" stroke="#5a6e80" stroke-width="2"/><circle cx="50" cy="40" r="8" fill="#d6336c"/><circle cx="22" cy="16" r="5" fill="#13293d"/><circle cx="80" cy="14" r="5" fill="#13293d"/><circle cx="18" cy="62" r="5" fill="#13293d"/><circle cx="84" cy="60" r="5" fill="#13293d"/><circle cx="52" cy="8" r="4" fill="#13293d"/><circle cx="92" cy="32" r="4" fill="#d5dfe7"/></svg>
+        <span>робот</span>
+      </div>
+      <div class="hero-tile">
+        <svg viewBox="0 0 100 80"><rect x="14" y="10" width="72" height="11" rx="2" fill="#d6336c"/><rect x="14" y="26" width="54" height="11" rx="2" fill="#a1254f"/><rect x="14" y="42" width="38" height="11" rx="2" fill="#5a6e80"/><rect x="14" y="58" width="24" height="11" rx="2" fill="#d5dfe7"/></svg>
+        <span>топ-K</span>
+      </div>
+    </div>
+    <div class="stack">
+      <h1>Разбор задач: файлы, такси, робот, топ-K</h1>
+      <p class="lead">Четыре классические задачи системного дизайна — от требований до узких мест. С цифрами, компромиссами и тем, что хочет услышать интервьюер.</p>
+      <ol class="flow-strip">
+        <li>требования</li><li>оценки</li><li>API</li><li>данные</li><li>схема</li><li>углубление</li><li>узкие места</li>
+      </ol>
+      <p class="note">Каждая задача идёт по этой схеме. Сами приёмы разобраны в <a href="/sd-approach/">подходе</a>, <a href="/sd-scaling/">масштабировании</a>, <a href="/sd-data/">данных</a> и <a href="/sd-distributed/">распределённых системах</a>; здесь — применение. Листайте стрелками ← →, свайпом или кнопками внизу.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">1 · Dropbox / Google Drive</span>
+      <h2>Хранилище файлов: требования и оценки</h2>
+      <ul class="points">
+        <li><b>Функции:</b> загрузить и скачать файл до 50 ГБ, синхронизация между устройствами, история версий, общий доступ.</li>
+        <li><b>Нефункциональные:</b> файлы не теряются (11 девяток у объектного хранилища), докачка после обрыва, правка большого файла не гонит его целиком, изменение доезжает до других устройств за секунды.</li>
+        <li>Чтение и запись соизмеримы: каждое изменение скачивают остальные устройства владельца.</li>
+      </ul>
+      <p class="note">Посчитайте нагрузку. Главный вывод интервьюер ждёт сам: байты — дорого, метаданные — много мелких запросов. Это две разные системы.</p>
+    </div>
+    <div class="demo" data-demo="fs-calc"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>API, данные и путь загрузки</h2>
+<pre class="code"><code class="lang-plain">
+POST /commit {path, base_rev, chunks:[хеши]}
+  → 200 {rev} · 409 конфликт
+  → 428 {missing:[h3,h7], upload_urls}
+GET  /delta?cursor=1050   → изменения, cursor
+GET  /notify?cursor=1050  # long-poll
+</code></pre>
+      <ul class="points">
+        <li><b>Метаданные</b> (SQL, шард по <code>namespace_id</code>): <code>file(ns, path, rev, chunks[])</code>, <code>chunk(hash, size, refcount)</code>, журнал изменений namespace с курсором.</li>
+        <li><b>Байты</b> — в объектном хранилище по ключу <code>sha256</code>. Через сервис они не идут: клиент пишет напрямую по presigned URL.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="fs-flow"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Чанки и дедупликация</h2>
+      <p class="lead">Файл режется на куски, каждый адресуется хешем содержимого. Сервер хранит кусок один раз, клиент загружает только те, которых у сервера нет.</p>
+      <ul class="points">
+        <li><b>Фиксированные куски</b> (Dropbox — по 4 МБ): просто, но вставка байта в начало сдвигает все границы — меняются все куски после правки.</li>
+        <li><b>По содержимому (CDC)</b>: скользящий хеш по окну в несколько десятков байт, граница там, где хеш даёт нужные биты. Вставка двигает только соседнюю границу. Так режут rsync-подобные системы, restic, borg, Seafile.</li>
+      </ul>
+      <p class="note">Нажимайте правки и сравните, сколько кусков придётся загрузить.</p>
+    </div>
+    <div class="demo" data-demo="chunks"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Синхронизация и конфликты</h2>
+      <ul class="points">
+        <li>Коммит условный: «запиши rev 8, если сейчас rev 7» — оптимистичная блокировка. Кто опоздал, получает 409.</li>
+        <li>Слить два двоичных файла сервер не может. Dropbox сохраняет обе версии: вторую как «конфликтную копию». Google Docs вместо этого правит общий документ через OT/CRDT — это другая задача.</li>
+        <li>Уведомление несёт только «что-то изменилось». Данные клиент забирает сам по курсору — так ничего не теряется, даже если уведомление пропало или устройство было офлайн.</li>
+      </ul>
+      <p class="note">Попробуйте: выключите сеть у B, поправьте файл на обоих устройствах и включите сеть.</p>
+    </div>
+    <div class="demo" data-demo="fs-sync"></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Хранилище файлов: узкие места</h2>
+      <ul class="points">
+        <li><b>Мелкие файлы.</b> <code>node_modules</code> — 50 тысяч файлов по 2 КБ: упирается в метаданные, а не в байты. Пакетные коммиты, мелкие куски склеивают в один объект.</li>
+        <li><b>Горячий namespace</b> — общая папка компании на 10 тысяч человек: шард с ней и рассылка уведомлений. Отдельные шарды для больших команд.</li>
+        <li><b>Стоимость.</b> Холодные версии — в дешёвый класс хранения, исходящий трафик — через CDN. Сжатие кусков перед загрузкой.</li>
+        <li><b>Сборка мусора.</b> Кусок удаляют, когда на него не ссылается ни одна версия, — с задержкой, чтобы не удалить загружаемый прямо сейчас.</li>
+      </ul>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <p class="q">Дедупликация общая на всех пользователей: клиент присылает хеш куска, и если такой кусок есть, загрузку пропускает. Что здесь не так?</p>
+      <button class="opt text">Ничего, это просто экономия трафика</button>
+      <button class="opt text">Коллизии SHA-256 испортят чужие файлы</button>
+      <button class="opt text" data-correct>Зная только хеш, можно получить чужой файл и проверить, хранит ли кто-то конкретный документ</button>
+      <button class="opt text">Сервер не сможет посчитать занятое место</button>
+      <div class="explain">Хеш становится паролем к содержимому: «загрузил» по хешу — и скачал файл, которого у тебя не было. А по тому, пропущена ли загрузка, видно, есть ли такой файл у кого-то ещё. Dropbox в 2011 году закрыл такую атаку (Dropship): между пользователями дедуплицирует только сервер, после реальной загрузки. Сквозное шифрование и общая дедупликация вообще несовместимы.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">2 · Uber / такси</span>
+      <h2>Поиск машин рядом: требования и оценки</h2>
+      <ul class="points">
+        <li><b>Функции:</b> водители шлют координаты, пассажир видит машины рядом и заказывает поездку, система назначает одного водителя.</li>
+        <li><b>Нефункциональные:</b> поиск за ~100 мс, назначение за секунды, водитель не получает два заказа сразу. Точная позиция нужна только свежая — история идёт в отдельное хранилище.</li>
+        <li>Нагрузка — это частота записи координат, а не объём данных.</li>
+      </ul>
+      <p class="note">Двигайте ползунки: память почти не меняется, а записей в секунду — сотни тысяч.</p>
+    </div>
+    <div class="demo" data-demo="geo-calc"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Геоиндекс: ячейки и соседи</h2>
+      <p class="lead">Карта делится на ячейки (geohash, S2 у Google, H3 у Uber), водитель хранится в своей. Поиск — это рассматриваемая ячейка и её соседи: точка у границы иначе не увидит машину в метре через край.</p>
+      <ul class="points">
+        <li><b>Крупные ячейки</b> — мало запросов, но в центре города проверяются сотни лишних машин.</li>
+        <li><b>Мелкие</b> — проверяется мало, но ячеек десятки.</li>
+        <li><b>Квадродерево</b> делит пространство по плотности: в центре ячейки мелкие, на окраине крупные. Зато его нужно перестраивать, когда машины переезжают.</li>
+      </ul>
+      <p class="note">Нажмите на карту, чтобы поставить пассажира. Радиус поиска — 1 км.</p>
+    </div>
+    <div class="demo" data-demo="geogrid"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Позиции в памяти и назначение</h2>
+<pre class="code"><code class="lang-plain">
+# водитель, раз в 4 с:
+GEOADD drv:msk 37.62 55.75 d42
+# пассажир ищет машины рядом:
+GEOSEARCH drv:msk FROMLONLAT 37.61 55.76
+  BYRADIUS 1 km ASC COUNT 20
+# бронь водителя на 15 с:
+SET lock:d42 ride:981 NX PX 15000
+</code></pre>
+      <ul class="points">
+        <li>Redis GEO — это sorted set, где счёт — 52-битный geohash. Позиции эфемерны: потеряли — через 4 секунды водители пришлют снова.</li>
+        <li>Назначение: кандидаты по ETA с учётом дорог, предложение лучшему, ожидание ответа. Водитель бронируется атомарно, иначе два диспетчера отдадут его двум пассажирам.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="match"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Горячие районы</h2>
+      <p class="lead">Шардируем по городу или по крупной ячейке: поиск почти всегда попадает в один шард. Цена — неравномерность. Концерт закончился — 40 тысяч человек на стадионе открывают приложение, и один шард получает поисков больше, чем весь остальной город.</p>
+      <ul class="points">
+        <li>Поиск в плотной ячейке дорогой: он возвращает сотни точек.</li>
+        <li>Пассажиру не нужна точность до метра и до секунды: ответ для ячейки можно отдать из кэша на 1–2 секунды.</li>
+      </ul>
+      <p class="note">Включите событие, затем попробуйте разные меры.</p>
+    </div>
+    <div class="demo" data-demo="hotspot"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">3 · Поисковый робот</span>
+      <h2>Поисковый робот: требования, оценки, схема</h2>
+      <ul class="points">
+        <li><b>Цель:</b> 1 млрд страниц в месяц, только HTML. Вежливость к сайтам, соблюдение robots.txt, без дублей, устойчивость к ловушкам.</li>
+        <li>1 млрд / 2,6 млн с ≈ <b>400 стр/с</b>, в пике ~1000. При 100 КБ на страницу — ~40 МБ/с входящего трафика и <b>100 ТБ</b> в месяц до сжатия.</li>
+        <li>Узкое место не CPU, а ожидание: DNS, TCP, медленные сайты и паузы вежливости. Нужны тысячи одновременных загрузок.</li>
+      </ul>
+    </div>
+    <div class="crawl-flow" aria-label="Схема поискового робота">
+      <div class="cf-row">
+        <span class="cf-node">Начальные URL</span><i>→</i>
+        <span class="cf-node hot">Frontier<small>очереди по хостам</small></span><i>→</i>
+        <span class="cf-node">Загрузчик<small>DNS-кэш, robots.txt</small></span>
+      </div>
+      <div class="cf-down"><i>↓</i></div>
+      <div class="cf-row rev">
+        <span class="cf-node">Хранилище<small>S3 + индекс</small></span><i>←</i>
+        <span class="cf-node hot">Содержимое уже было?<small>хеш, simhash</small></span><i>←</i>
+        <span class="cf-node">Парсер</span>
+      </div>
+      <div class="cf-down"><i>↓</i></div>
+      <div class="cf-row">
+        <span class="cf-node hot">URL уже был?<small>фильтр Блума</small></span><i>←</i>
+        <span class="cf-node">Нормализовать, фильтр</span><i>←</i>
+        <span class="cf-node">Извлечь ссылки</span>
+      </div>
+      <div class="cf-up"><i>↑ новые URL — обратно во frontier</i></div>
+      <p class="note">Розовым — три места, которые интервьюер попросит раскрыть.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Frontier и вежливость</h2>
+      <p class="lead">Нельзя просто взять очередь URL и раздать воркерам: подряд идут ссылки с одного сайта, и робот положит его. Поэтому URL раскладывают по очередям хостов, а для каждого хоста помнят, когда к нему можно снова.</p>
+      <ul class="points">
+        <li>Свободный воркер берёт из кучи хост с наименьшим «можно после» — и только если время пришло.</li>
+        <li>Один хост — одно соединение и пауза между запросами (секунда или <code>Crawl-delay</code>). Перед этими очередями — очереди приоритетов: важные страницы раньше.</li>
+      </ul>
+      <p class="note">Добавьте 30 URL с одного сайта, потом с разных — и сравните скорость.</p>
+    </div>
+    <div class="demo" data-demo="frontier"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Дубли: URL и содержимое</h2>
+      <ul class="points">
+        <li><b>URL.</b> Сначала нормализация: регистр хоста, порт по умолчанию, <code>#фрагмент</code>, порядок и мусор в параметрах (<code>utm_*</code>, <code>sessionid</code>). Потом проверка «уже видели» — <a href="/probabilistic-structures/">фильтр Блума</a>: 10 млрд URL при 1% ложных срабатываний — ~12 ГБ. Ложное срабатывание — пропущенная новая страница, это приемлемо.</li>
+        <li><b>Точные копии</b> (зеркала, http и https) ловит хеш содержимого.</li>
+        <li><b>Почти копии</b> — та же статья с другой датой или баннером. Обычный хеш меняется целиком, а simhash — на несколько бит. Близкие страницы ищут по расстоянию Хэмминга: в Google для 64 бит брали порог 3.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="simhash"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Ловушки, robots.txt, распределение</h2>
+      <ul class="points">
+        <li><b>Ловушки:</b> бесконечный календарь, <code>?page=…</code> без конца, идентификатор сессии в каждой ссылке. Защита — лимит глубины и длины URL, бюджет страниц на хост, детектор повторяющихся шаблонов пути.</li>
+        <li><b>robots.txt</b> кэшируют на сутки для каждого хоста; пока он не скачан, хост не обходят.</li>
+        <li><b>DNS</b> — синхронный вызов и частое узкое место: свой кэширующий резолвер, асинхронные запросы.</li>
+        <li><b>Повторный обход:</b> новости — каждый час, справочник — раз в месяц. Частоту подстраивают по тому, как часто менялась страница.</li>
+      </ul>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <p class="q">Frontier распределён по 50 узлам. Как разбить URL между ними?</p>
+      <button class="opt text">По <code>hash(url)</code> — равномернее всего</button>
+      <button class="opt text" data-correct>По <code>hash(host)</code> — все URL одного сайта на одном узле</button>
+      <button class="opt text">Случайно, а дубли отсечёт фильтр Блума</button>
+      <button class="opt text">Round-robin по мере поступления</button>
+      <div class="explain">Вежливость — это состояние хоста: время последнего запроса, <code>Crawl-delay</code>, robots.txt, DNS. При <code>hash(host)</code> всё это локально на одном узле, и пауза соблюдается без координации. При <code>hash(url)</code> 50 узлов одновременно ходят на один сайт, и нужен распределённый лимитер. Перекос от гигантских сайтов лечат бюджетом на хост.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <span class="tech">4 · Счётчики и топ-K</span>
+      <h2>Счётчик просмотров: горячий ключ</h2>
+      <ul class="points">
+        <li>1 млрд просмотров в сутки — ~12 тыс./с в среднем, ~35 тыс./с в пике. В сумме немного, но премьера клипа даёт 50 тысяч в секунду на одну строку.</li>
+        <li><code>UPDATE … SET views = views + 1</code> по одной строке — это очередь на блокировке строки: несколько тысяч в секунду, и всё.</li>
+        <li>Решения: разбить счётчик на N строк (запись — в случайную, чтение — сумма) или копить в памяти сервера и сбрасывать раз в секунду одним <code>+= n</code>.</li>
+      </ul>
+      <p class="note">Поднимите поток просмотров и посмотрите, когда растёт очередь.</p>
+    </div>
+    <div class="demo" data-demo="shardcounter"></div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Топ запросов: точно или приблизительно</h2>
+      <p class="lead">Точный подсчёт — хеш-таблица на все различные запросы: сотни миллионов ключей, десятки гигабайт в узле потоковой обработки. Для топа это не нужно.</p>
+      <ul class="points">
+        <li><a href="/probabilistic-structures/">Count-Min Sketch</a>: d × w счётчиков, оценка частоты только завышена, ошибка — порядка N / w.</li>
+        <li>Рядом — куча из K кандидатов: пришёл запрос, обновили скетч; если оценка больше минимума кучи — запрос в куче.</li>
+        <li>Тяжёлые запросы видны отлично, хвост — неточно. Для топа именно это и нужно.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="cms"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Окна: «в тренде» за последние минуты</h2>
+      <ul class="points">
+        <li>Тренд — топ за окно, а не за всё время: иначе вечно первым будет «погода».</li>
+        <li>Счётчики держат по корзинам — по минуте. Скользящее окно — сумма последних N корзин: пришла новая минута — прибавили, старая вышла — вычли.</li>
+        <li>Потоковые движки (Flink, Kafka Streams) дают такие окна готовыми, вместе с водяными знаками для опоздавших событий.</li>
+      </ul>
+      <p class="note">Устройте всплеск и сравните топ за 5 минут с топом за всё время.</p>
+    </div>
+    <div class="demo" data-demo="window"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Поток, пакеты, лямбда и каппа</h2>
+      <ul class="points">
+        <li><b>Поток:</b> Kafka → Flink (окна, скетчи) → Redis sorted set, откуда читает API. Секунды задержки, результат приблизительный.</li>
+        <li><b>Пакетная обработка:</b> сырые события в S3 → Spark раз в час/сутки → точные цифры для отчётов и денег.</li>
+        <li><b>Лямбда</b> — оба пути сразу: быстрый и точный. Минус — одна логика в двух кодовых базах.</li>
+        <li><b>Каппа</b> — только поток, а пересчёт — повторным проигрыванием журнала Kafka новой версией задачи.</li>
+        <li>Отсюда давний «301 просмотр» на YouTube: счётчик замирал, пока пакетная проверка отсеивала ботов, и только потом показывал точную цифру.</li>
+      </ul>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <p class="q">События разбиты на 10 партиций по <code>user_id</code>. Каждая партиция считает свой топ-10 запросов, агрегатор сливает десять списков. Получится точный глобальный топ-10?</p>
+      <button class="opt text">Да, если считать каждую партицию точно</button>
+      <button class="opt text" data-correct>Нет: запрос может быть 11-м везде и первым в сумме</button>
+      <button class="opt text">Да, если партиций не больше K</button>
+      <button class="opt text">Нет, только из-за опоздавших событий</button>
+      <div class="explain">Запрос, который в каждой партиции 11-й, не попадёт ни в один локальный список, хотя в сумме может обогнать «лидеров», сосредоточенных в одной-двух партициях. Лечится разбиением по ключу — <code>hash(query)</code>: каждый запрос считается целиком в одной партиции, и слияние локальных топов становится точным. Перед этим можно частично агрегировать на стороне продюсера.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Коротко: система уведомлений</h2>
+    <div class="nt-flow">
+      <span class="cf-node">Сервисы-источники<small>«заказ доставлен»</small></span><i>→</i>
+      <span class="cf-node hot">Сервис уведомлений<small>шаблон, настройки, дедуп</small></span><i>→</i>
+      <span class="cf-node">Очереди по каналам<small>push · email · SMS</small></span><i>→</i>
+      <span class="cf-node">Воркеры<small>ретраи, лимиты</small></span><i>→</i>
+      <span class="cf-node">APNs / FCM / SMTP / SMS-шлюз</span>
+    </div>
+    <ul class="points nt-points">
+      <li><b>Отдельная очередь на канал:</b> упал SMS-провайдер — push продолжает уходить, а очередь SMS копится и дожидается ретраев.</li>
+      <li><b>Идемпотентность:</b> доставка «хотя бы раз», поэтому ключ события и дедуп перед отправкой — иначе два одинаковых SMS.</li>
+      <li><b>Настройки и лимиты:</b> отписки, тихие часы, не больше N push в час на человека. Проверяются до постановки в очередь.</li>
+      <li><b>Рассылка подписчикам</b> (fan-out) — пакетами в фоне: 10 млн получателей — это задача на минуты, а не запрос.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Что повторяется из задачи в задачу</h2>
+    <div class="ptable">
+      <div class="pt-row head"><span>Приём</span><span>Файлы</span><span>Такси</span><span>Робот</span><span>Топ-K</span></div>
+      <div class="pt-row"><span>Разбить по естественному ключу</span><span>namespace</span><span>город, ячейка</span><span>хост</span><span>запрос</span></div>
+      <div class="pt-row"><span>Горячий ключ: дробить и копить</span><span>общая папка</span><span>стадион</span><span>гигантский сайт</span><span>вирусное видео</span></div>
+      <div class="pt-row"><span>Хеш вместо сравнения</span><span>хеш куска</span><span>geohash</span><span>simhash, Блум</span><span>Count-Min</span></div>
+      <div class="pt-row"><span>Приблизительно — достаточно</span><span>—</span><span>позиция 4 с назад</span><span>ложный «уже был»</span><span>топ со скетчем</span></div>
+      <div class="pt-row"><span>Отделить тяжёлое от лёгкого</span><span>байты ≠ метаданные</span><span>позиции ≠ поездки</span><span>страницы ≠ frontier</span><span>события ≠ счётчики</span></div>
+      <div class="pt-row"><span>Сигнал + забрать по курсору</span><span>long-poll + delta</span><span>предложение водителю</span><span>—</span><span>подписка на топ</span></div>
+    </div>
+    <p class="note">Похожие приёмы в задачах первой части — в <a href="/sd-cases-1/">разборе задач 1</a>.</p>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Что слушает интервьюер</h2>
+    <div class="fit">
+      <div class="fit-col">
+        <h3>Сильный ответ</h3>
+        <ul>
+          <li>Уточняет масштаб и что важнее: свежесть, точность или стоимость.<span class="alt">«Счётчик нужен для денег или для витрины?»</span></li>
+          <li>Считает и делает из цифр вывод.<span class="alt">«250 тыс. записей/с — значит, в памяти, шардировать по городу»</span></li>
+          <li>Сам называет узкое место своей схемы и цену решения.<span class="alt">«Кэш ячейки на 2 с — пассажир видит машины с опозданием»</span></li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Слабый ответ</h3>
+        <ul>
+          <li>Сразу рисует Kafka, Redis и микросервисы без требований.</li>
+          <li>Оценки ради оценок: посчитал терабайты и не использовал.</li>
+          <li>«Возьмём Cassandra, она масштабируется» — без ключа разбиения и запросов.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 22 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li><b>Файлы:</b> метаданные отдельно от байтов, куски с адресом-хешем, загрузка напрямую в S3, условный коммит, уведомление + забрать по курсору.</li>
+      <li><b>Такси:</b> проблема — частота записи. Позиции в памяти, геоячейки с соседями, атомарная бронь водителя, кэш ячейки для горячих мест.</li>
+      <li><b>Робот:</b> frontier с очередями по хостам и паузами, разбиение по хосту, Блум для URL, simhash для почти дублей, защита от ловушек.</li>
+      <li><b>Топ-K:</b> горячий счётчик дробят или копят, топ считают скетчем с кучей в окнах; точные цифры — пакетно.</li>
+    </ul>
+    <p class="proverb">Сначала цифры, потом схема, потом — где она сломается.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos-files.js"></script>
+<script src="demos-geo.js"></script>
+<script src="demos-stream.js"></script>
+</body>
+</html>

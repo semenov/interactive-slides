@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Перебор, ДП и жадные алгоритмы — интерактивная презентация</title>
+  <meta name="description" content="Рекурсия и дерево вызовов, перебор с возвратом, мемоизация и таблица, рецепт динамического программирования, редакционное расстояние, diff, рюкзак, размен монет, LIS, жадные алгоритмы и код Хаффмана — с примерами из баз данных, git и gzip.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-dp" aria-hidden="true">
+      <svg viewBox="0 0 300 300">
+        <g class="hd-tree">
+          <line x1="150" y1="30" x2="85" y2="80"/><line x1="150" y1="30" x2="215" y2="80"/>
+          <line x1="85" y1="80" x2="50" y2="130"/><line x1="85" y1="80" x2="120" y2="130"/>
+          <line x1="215" y1="80" x2="190" y2="130"/><line x1="215" y1="80" x2="245" y2="130"/>
+          <circle cx="150" cy="30" r="17"/><text x="150" y="35">f5</text>
+          <circle cx="85" cy="80" r="17"/><text x="85" y="85">f4</text>
+          <circle cx="215" cy="80" r="17" class="rep"/><text x="215" y="85">f3</text>
+          <circle cx="50" cy="130" r="17" class="rep"/><text x="50" y="135">f3</text>
+          <circle cx="120" cy="130" r="17" class="rep2"/><text x="120" y="135">f2</text>
+          <circle cx="190" cy="130" r="17" class="rep2"/><text x="190" y="135">f2</text>
+          <circle cx="245" cy="130" r="17"/><text x="245" y="135">f1</text>
+        </g>
+        <g class="hd-grid">
+          <rect x="40" y="170" width="36" height="28"/><rect x="76" y="170" width="36" height="28"/><rect x="112" y="170" width="36" height="28"/><rect x="148" y="170" width="36" height="28"/><rect x="184" y="170" width="36" height="28"/><rect x="220" y="170" width="36" height="28"/>
+          <rect x="40" y="198" width="36" height="28" class="on"/><rect x="76" y="198" width="36" height="28" class="on"/><rect x="112" y="198" width="36" height="28" class="on"/><rect x="148" y="198" width="36" height="28" class="on"/><rect x="184" y="198" width="36" height="28" class="on"/><rect x="220" y="198" width="36" height="28" class="cur"/>
+          <text x="58" y="189">0</text><text x="94" y="189">1</text><text x="130" y="189">2</text><text x="166" y="189">3</text><text x="202" y="189">4</text><text x="238" y="189">5</text>
+          <text x="58" y="217">0</text><text x="94" y="217">1</text><text x="130" y="217">1</text><text x="166" y="217">2</text><text x="202" y="217">3</text><text x="238" y="217" class="dark">5</text>
+          <path d="M166 230 q36 34 72 0" class="arr"/><path d="M202 230 q18 18 36 0" class="arr"/>
+          <text x="150" y="282" class="cap">dp[i] = dp[i−1] + dp[i−2]</text>
+        </g>
+      </svg>
+    </div>
+    <div class="stack">
+      <h1>Перебор, ДП и жадные алгоритмы</h1>
+      <p class="lead">Как из экспоненциального перебора получить полиномиальный алгоритм, когда хватает жадного выбора — и где это работает внутри git, gzip, Postgres и Elasticsearch.</p>
+      <p class="note">Серия «Алгоритмы и структуры данных», часть 6. Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Рекурсия и дерево вызовов</h2>
+<pre class="code"><code class="lang-py">
+def fib(n):
+    if n &lt; 2:        # база
+        return n
+    return fib(n - 1) + fib(n - 2)
+</code></pre>
+      <ul class="points">
+        <li>Время — число узлов дерева, память — его глубина: на стеке живёт только текущая ветка.</li>
+        <li>Два вызова на уровень — дерево растёт как φ<sup>n</sup> ≈ 1,6<sup>n</sup>. Причина — одни и те же подзадачи считаются снова и снова.</li>
+        <li>Запомнить ответ подзадачи — мемоизация. Дерево схлопывается в цепочку из 2n−1 вызовов.</li>
+      </ul>
+      <p class="note">Глубина ограничена стеком: Python — 1000 кадров (<code>RecursionError</code>), Node — ~10 тыс. (<code>RangeError</code>), Java — размер <code>-Xss</code>, Go растит стек горутины до 1 ГБ. Подробнее — в <a href="/stack-and-heap/">«Стек и куча»</a>.</p>
+    </div>
+    <div class="demo" data-demo="calltree"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сверху вниз и снизу вверх</h2>
+<pre class="code"><code class="lang-py">
+from functools import cache
+
+@cache              # сверху вниз
+def ways(n):
+    if n &lt;= 1:
+        return 1
+    return ways(n - 1) + ways(n - 2)
+
+def ways_table(n):  # снизу вверх
+    a, b = 1, 1     # dp[i-2], dp[i-1]
+    for _ in range(n - 1):
+        a, b = b, a + b
+    return b
+</code></pre>
+      <p class="note">«Сколькими способами подняться на n ступенек шагами по 1 и 2?» Последний шаг — либо 1, либо 2, поэтому <code>dp[i] = dp[i−1] + dp[i−2]</code>. Таблица считает подзадачи в правильном порядке без рекурсии и стека, а когда нужны только две последние — хватает двух переменных.</p>
+    </div>
+    <div class="demo" data-demo="stairs"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Перебор с возвратом</h2>
+<pre class="code"><code class="lang-py">
+def backtrack(state):
+    if is_solution(state):
+        yield list(state)
+    for choice in choices(state):
+        if not valid(state, choice):
+            continue              # отсечение
+        state.append(choice)      # вперёд
+        yield from backtrack(state)
+        state.pop()               # назад
+</code></pre>
+      <p class="note">Шаблон для «перечислить все»: подмножества, перестановки, сочетания с суммой, судоку, поиск слова в сетке. Ответов экспоненциально много — выигрыш только в отсечении: чем раньше видно, что ветка тупиковая, тем меньше дерево. Так же работают SAT-солверы и планировщики расписаний.</p>
+    </div>
+    <div class="demo" data-demo="queens"></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Рецепт динамического программирования</h2>
+    <p class="lead">ДП подходит, когда у задачи есть оптимальная подструктура (ответ собирается из ответов подзадач) и подзадачи повторяются. Тогда решение строится в четыре шага.</p>
+    <div class="recipe">
+      <div class="rc"><b>1. Состояние</b><p>Что описывает подзадачу: <code>dp[i]</code> — лучший ответ для первых <i>i</i> элементов, <code>dp[i][j]</code> — для префиксов двух строк, <code>dp[i][w]</code> — для <i>i</i> предметов и вместимости <i>w</i>.</p></div>
+      <div class="rc"><b>2. Переход</b><p>Как ответ собирается из меньших: перебрать последнее решение. «Грабитель домов»: дом <i>i</i> берём или нет — <code>max(dp[i−1], dp[i−2] + a[i])</code>.</p></div>
+      <div class="rc"><b>3. База</b><p>Ответы для самых маленьких подзадач: пустая строка, ноль предметов, нулевая сумма. Ошибка в базе — самая частая ошибка в ДП.</p></div>
+      <div class="rc"><b>4. Порядок и ответ</b><p>Считать так, чтобы нужные значения уже были готовы. Где лежит ответ: <code>dp[n]</code>, <code>max(dp)</code>, <code>dp[n][m]</code>. Сложность = число состояний × цена перехода.</p></div>
+    </div>
+<pre class="code"><code class="lang-py">
+def rob(a):                     # dp[i] = max(dp[i-1], dp[i-2] + a[i])
+    prev2, prev1 = 0, 0         # база: ноль домов
+    for x in a:                 # порядок: слева направо
+        prev2, prev1 = prev1, max(prev1, prev2 + x)
+    return prev1                # ответ: последнее состояние
+</code></pre>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Редакционное расстояние</h2>
+      <p class="lead">Сколько вставок, удалений и замен превращают одно слово в другое (Левенштейн). <code>dp[i][j]</code> — расстояние между первыми <i>i</i> буквами одного слова и <i>j</i> буквами другого. Буквы совпали — берём диагональ, иначе 1 + минимум из трёх соседей.</p>
+      <ul class="points">
+        <li>Проверка орфографии и «Возможно, вы имели в виду…»; <code>levenshtein()</code> в Postgres (<code>fuzzystrmatch</code>).</li>
+        <li>Нечёткий поиск Elasticsearch (<code>fuzziness: AUTO</code>) — до 2 правок, через автомат Левенштейна, а не таблицу на каждый терм.</li>
+        <li><code>difflib.get_close_matches</code> в Python считает другую меру — Ратклиффа — Обершелпа. Для Левенштейна берут <code>rapidfuzz</code>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="editdist"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как работает diff</h2>
+      <p class="lead">Diff двух файлов — это наибольшая общая подпоследовательность строк (LCS): что в неё вошло, остаётся без изменений, остальное — «−» и «+». Таблица та же, что у Левенштейна, только без замен.</p>
+      <ul class="points">
+        <li>Таблица — O(n·m): два файла по 100 тыс. строк — 10<sup>10</sup> клеток. Поэтому GNU diff и git используют алгоритм Майерса: O((n+m)·D), где D — число отличий. Похожие файлы сравниваются почти линейно.</li>
+        <li><code>git diff --patience</code> и <code>--histogram</code> сначала сопоставляют уникальные строки — дифф получается понятнее, когда в коде много одинаковых <code>}</code>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="lcsdiff"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Рюкзак 0/1</h2>
+      <p class="lead">Есть предметы с весом и ценностью и рюкзак вместимостью <i>W</i>. Каждый предмет берём целиком или не берём. <code>dp[i][w]</code> — лучшая ценность из первых <i>i</i> предметов при вместимости <i>w</i>:</p>
+<pre class="code"><code class="lang-py">
+dp[i][w] = max(dp[i-1][w],                        # не берём
+               dp[i-1][w - wt[i]] + val[i])       # берём
+</code></pre>
+      <p class="note">O(n·W) — «псевдополиномиально»: зависит от величины <i>W</i>, а не от длины входа. Вместимость 10<sup>9</sup> так не решить. В жизни это бюджет: какие задачи взять в спринт, какие объекты держать в кэше, какие рекламные блоки поставить в слот. Жадный выбор по «ценности за килограмм» здесь ошибается.</p>
+    </div>
+    <div class="demo" data-demo="knapsack"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Размен монет: жадно или ДП</h2>
+      <p class="lead">Набрать сумму минимальным числом монет. Жадно — брать самую крупную монету, которая помещается. Для рублей, евро и долларов это оптимально: такие системы называют каноническими. Для произвольных номиналов — нет.</p>
+<pre class="code"><code class="lang-py">
+from math import inf
+dp = [0] + [inf] * amount
+for s in range(1, amount + 1):
+    for c in coins:
+        if c &lt;= s:
+            dp[s] = min(dp[s], dp[s - c] + 1)
+</code></pre>
+      <p class="note">Та же таблица отвечает на три вопроса: «минимум монет» (<code>min</code>), «сколькими способами» (<code>+=</code>, цикл по монетам снаружи) и «можно ли набрать вообще» (<code>or</code>).</p>
+    </div>
+    <div class="demo" data-demo="coins"></div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Самая длинная возрастающая цепочка (LIS)</h2>
+      <p class="lead">Простое ДП — O(n²): <code>dp[i]</code> — длина лучшей цепочки, кончающейся на <code>a[i]</code>. Быстрое — O(n log n): храним <code>tails[k]</code>, самый маленький возможный конец цепочки длины <i>k</i>+1, и бинарным поиском находим, куда поставить очередное число.</p>
+<pre class="code"><code class="lang-py">
+from bisect import bisect_left
+tails = []
+for x in a:
+    k = bisect_left(tails, x)
+    if k == len(tails): tails.append(x)
+    else:               tails[k] = x
+return len(tails)
+</code></pre>
+      <p class="note">Это «пасьянс»: карты раскладывают в стопки. Отсюда patience diff — LIS по номерам уникальных общих строк двух файлов.</p>
+    </div>
+    <div class="demo" data-demo="lis"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Экономия памяти: катящиеся строки</h2>
+      <ul class="points">
+        <li>Если переход смотрит только на предыдущую строку таблицы, хранить нужно две строки: O(m) памяти вместо O(n·m). Левенштейн для строк по 10<sup>5</sup> символов: 40 ГБ против 800 КБ.</li>
+        <li>Рюкзак можно сжать до одной строки, если идти по вместимости справа налево.</li>
+        <li>Цена экономии — путь. Чтобы восстановить, какие правки или предметы выбраны, нужна полная таблица или алгоритм Хиршберга: «разделяй и властвуй» поверх двух строк, O(m) памяти и тот же путь.</li>
+      </ul>
+    </div>
+<pre class="code"><code class="lang-py">
+def levenshtein(a, b):
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1,    # удалить
+                cur[j - 1] + 1,            # вставить
+                prev[j - 1] + (ca != cb))) # заменить
+        prev = cur
+    return prev[-1]
+
+def knapsack(items, W):
+    dp = [0] * (W + 1)
+    for wt, val in items:
+        # справа налево!
+        for w in range(W, wt - 1, -1):
+            dp[w] = max(dp[w], dp[w - wt] + val)
+    return dp[W]
+</code></pre>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В однострочном рюкзаке с прошлого слайда цикл по <code>w</code> развернули: <code>for w in range(wt, W + 1)</code>. Что изменится?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Ничего: порядок обхода не влияет на результат</button>
+      <button class="opt text">Ответ станет меньше: часть состояний не успеет посчитаться</button>
+      <button class="opt text" data-correct>Каждый предмет можно будет взять сколько угодно раз</button>
+      <button class="opt text">Будет IndexError на отрицательных индексах</button>
+      <div class="explain">При обходе слева направо <code>dp[w − wt]</code> уже обновлён в этой же итерации — то есть уже учитывает текущий предмет, и его можно положить ещё раз. Получается рюкзак с неограниченным числом предметов (и размен монет). Обход справа налево читает значения ещё из «предыдущей строки». Такие ошибки тесты на маленьких примерах часто пропускают.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Жадные алгоритмы: когда выбор доказуемо верен</h2>
+      <p class="lead">Жадный алгоритм делает локально лучший шаг и никогда его не пересматривает. Это верно, только если доказано: любое оптимальное решение можно переделать так, чтобы оно начиналось с жадного шага (аргумент обмена).</p>
+      <p class="note">Выбрать больше всего непересекающихся встреч: сортировать по времени окончания и брать всё, что не пересекается. Первая закончившаяся встреча оставляет больше всего места для остальных — значит, её можно поставить в любое оптимальное решение вместо первой. По началу или по длине — ошибаются. Сколько нужно переговорок для всех встреч — тоже жадно: сортировка по началу и куча концов.</p>
+    </div>
+    <div class="demo" data-demo="intervals"></div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Код Хаффмана</h2>
+      <p class="lead">Частым символам — короткие коды, редким — длинные. Жадно: дважды достать из кучи два самых редких узла и склеить их в один. Получается оптимальный префиксный код: ни один код не начало другого, поэтому разделители не нужны.</p>
+      <ul class="points">
+        <li>DEFLATE — gzip, zlib, PNG, zip, HTTP <code>Content-Encoding: gzip</code>: сначала LZ77 заменяет повторы ссылками, потом Хаффман кодирует результат.</li>
+        <li>HPACK в HTTP/2 сжимает заголовки статическим кодом Хаффмана; JPEG, Brotli и zstd тоже используют префиксные коды.</li>
+        <li>Дейкстра — тоже жадный алгоритм: берёт ближайшую непосещённую вершину. Подробнее — в презентации про <a href="/graphs/">графы</a>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="huffman"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">В какой из задач жадный выбор «по лучшему отношению ценности к весу» гарантированно даёт оптимум?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Рюкзак 0/1: предметы берутся целиком</button>
+      <button class="opt text" data-correct>Дробный рюкзак: можно взять часть предмета, например 0,3 кг крупы</button>
+      <button class="opt text">Размен монет номиналами 1, 3 и 4</button>
+      <button class="opt text">Ни в какой: жадность никогда не гарантирует оптимум</button>
+      <div class="explain">В дробном рюкзаке выгоднее всего заполнить каждый килограмм самым «дорогим» товаром, а остаток добрать частью следующего — аргумент обмена проходит. В 0/1 рюкзаке целый предмет может оставить пустое место, которое ничем не заполнить, и жадность проигрывает (см. слайд 8). Монеты 1, 3, 4 на сумме 6: жадно 4+1+1, а оптимум 3+3.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>ДП в реальных системах</h2>
+    <div class="usecases">
+      <div class="uc"><span class="tech">PostgreSQL</span><p>Порядок соединений таблиц: планировщик перебирает подмножества таблиц снизу вверх — лучший план для пар, потом троек и так далее. До 8 таблиц (<code>join_collapse_limit</code>) — точно; от 12 (<code>geqo_threshold</code>) — генетический алгоритм, иначе 2<sup>n</sup> не уложить. Подробнее — в <a href="/postgres-internals/">«PostgreSQL изнутри»</a>.</p></div>
+      <div class="uc"><span class="tech">git, diff</span><p>LCS и алгоритм Майерса; patience diff — на LIS. Тот же подход в <code>difflib.unified_diff</code>, в слиянии веток и в rsync-подобных утилитах.</p></div>
+      <div class="uc"><span class="tech">TeX</span><p>Алгоритм Кнута — Пласса переносит строки абзаца целиком: минимизирует сумму «некрасивости» строк. Браузеры и редакторы обычно переносят жадно — сравните на следующем слайде.</p></div>
+      <div class="uc"><span class="tech">Биоинформатика</span><p>Выравнивание ДНК и белков — Нидлман — Вунш (глобальное) и Смит — Уотерман (локальное): тот же Левенштейн с весами за совпадения и разрывы.</p></div>
+      <div class="uc"><span class="tech">Связь и речь</span><p>Алгоритм Витерби — ДП по времени: самая вероятная цепочка скрытых состояний. Декодирует свёрточные коды в Wi-Fi, LTE и спутниковой связи, распознавал речь в HMM-системах.</p></div>
+      <div class="uc"><span class="tech">Маршрутизация</span><p>Беллман — Форд — ДП по числу рёбер: на нём протокол RIP и distance-vector маршрутизация. OSPF и IS-IS используют Дейкстру — жадный алгоритм.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Перенос строк: жадно против ДП</h2>
+      <p class="lead">Жадный перенос кладёт в строку столько слов, сколько влезает. ДП выбирает разбиение всего абзаца: <code>dp[i]</code> — минимальная цена текста с <i>i</i>-го слова до конца, переход — где закончить первую строку.</p>
+      <p class="note">Цена строки — квадрат пустого места справа (последняя строка бесплатна). Квадрат штрафует одну очень пустую строку сильнее, чем несколько чуть неполных. Это задача Text Justification с LeetCode и упрощённая версия того, что делает TeX.</p>
+    </div>
+    <div class="demo" data-demo="justify"></div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как узнать задачу на собеседовании</h2>
+      <ul class="points">
+        <li>«Сколькими способами», «минимальная/максимальная стоимость», «можно ли достичь» — почти всегда ДП.</li>
+        <li>«Перечислите все», «найдите любую расстановку» — перебор с возвратом.</li>
+        <li>Интервалы, расписание, «минимум операций» с очевидным лучшим шагом — жадный алгоритм после сортировки. Сначала поищите контрпример.</li>
+        <li>Ограничения подсказывают сложность: n ≤ 10 — n!, n ≤ 20 — 2<sup>n</sup> (маски), n ≤ 5000 — O(n²), n ≤ 10<sup>5</sup> — O(n log n).</li>
+      </ul>
+      <p class="note">Порядок ответа: перебор → «вот повторяющиеся подзадачи» → мемоизация → таблица → экономия памяти. Каждый шаг проговаривайте.</p>
+    </div>
+    <div class="demo" data-demo="classify"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Проверьте себя</h2>
+      <p class="lead">Решение сверху вниз с <code>@cache</code> прошло все тесты, а на n = 10 000 упало с <code>RecursionError: maximum recursion depth exceeded</code>. Что лучше сделать?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Заменить <code>@cache</code> на <code>@lru_cache(maxsize=None)</code></button>
+      <button class="opt text">Поставить <code>sys.setrecursionlimit(10**9)</code></button>
+      <button class="opt text" data-correct>Переписать снизу вверх: таблица в цикле, без рекурсии</button>
+      <button class="opt text">Кэш переполнился — нужно увеличить память процессу</button>
+      <div class="explain">Мемоизация убирает повторы, но не глубину: цепочка из 10 000 вложенных вызовов остаётся. Поднять лимит можно, но <code>@cache</code> — обёртка на C, и каждый уровень тратит ещё и стек C-потока: процесс может упасть с segfault или упереться в отдельный лимит. Цикл по таблице работает с любым n. И помните: <code>@lru_cache()</code> без аргументов хранит только 128 значений — для ДП это тихая деградация до экспоненты.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Как это увидеть у себя</h2>
+      <ul class="points">
+        <li><code>cache_info()</code> покажет попадания и промахи кэша: если промахов столько же, сколько вызовов, — подзадачи не повторяются, и мемоизация не нужна.</li>
+        <li>Сравните алгоритмы diff на своём репозитории: в больших рефакторингах <code>histogram</code> часто даёт заметно более читаемый результат.</li>
+        <li>В Postgres <code>EXPLAIN</code> на запросе из 10+ таблиц: порядок соединений, найденный ДП или GEQO, и время планирования.</li>
+        <li>Степень сжатия gzip зависит от энтропии данных: случайные байты не сжимаются, логи — в 5–10 раз.</li>
+      </ul>
+    </div>
+<div class="stack">
+<pre class="code"><code class="lang-py">
+from functools import cache
+import sys, difflib
+
+@cache
+def fib(n):
+    return n if n &lt; 2 else fib(n-1) + fib(n-2)
+
+fib(300)
+print(fib.cache_info())
+# CacheInfo(hits=298, misses=301,
+#           maxsize=None, currsize=301)
+print(sys.getrecursionlimit())  # 1000
+
+print(*difflib.unified_diff(old, new), sep='')
+</code></pre>
+<pre class="code"><code class="lang-plain">
+$ git diff --diff-algorithm=histogram HEAD~1
+$ gzip -k -v access.log   # степень сжатия, %
+psql> SHOW geqo_threshold;     -- 12
+psql> EXPLAIN SELECT ... -- порядок JOIN
+</code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Рекурсия — дерево вызовов: время — число узлов, память — глубина. Повторяющиеся узлы — сигнал к мемоизации.</li>
+      <li>Перебор с возвратом перечисляет варианты; вся скорость — в раннем отсечении.</li>
+      <li>ДП = состояние, переход, база, порядок. Сложность — число состояний на цену перехода. Снизу вверх — без лимита рекурсии и с катящимися строками.</li>
+      <li>Левенштейн, LCS, рюкзак, монеты, LIS — шаблоны, на которых стоят проверка орфографии, diff, планировщик Postgres и выравнивание ДНК.</li>
+      <li>Жадный алгоритм верен, только когда это доказано обменом. Интервалы и Хаффман — да, 0/1 рюкзак и произвольные монеты — нет.</li>
+    </ul>
+    <p class="proverb">Сначала честный перебор, потом — какие подзадачи он считает дважды.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-greedy.js"></script>
+</body>
+</html>
