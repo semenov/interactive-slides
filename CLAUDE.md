@@ -1,6 +1,6 @@
 # interactive-slides
 
-Static site with interactive presentations, deployed to https://slides.semenov.ai with `ship` (nginx via `Dockerfile`, config in `ship.toml`).
+Static site with interactive presentations, deployed to https://slides.semenov.ai with `homebase deploy` (nginx via `Dockerfile`, config in `homebase.toml`).
 Content language: Russian.
 
 ## Layout
@@ -78,4 +78,4 @@ single decks go under «Отдельные темы». Each deck's title slide/s
 
 ## Deploy
 
-`ship` from the repo root (app `slides`, server `root@thor.semenov.ai`).
+`homebase deploy` from the repo root (app `slides`, server `root@thor.semenov.ai`).

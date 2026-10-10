@@ -1,0 +1,7 @@
+# Settings for homebase: run `homebase` here to start the dev server
+# (it gets its port in $PORT), `homebase deploy` to deploy. https://github.com/semenov/homebase
+
+name = "slides"
+
+[deploy]
+  server = "root@thor.semenov.ai"
