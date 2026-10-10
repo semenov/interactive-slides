@@ -110,3 +110,23 @@
 .proverb { margin: 8px 0 0; font-size: clamp(1.3rem, 1.4vw + 0.8rem, 1.9rem); font-weight: 600; max-width: 30ch; line-height: 1.25; }
 .proverb cite { display: block; margin-top: 8px; font-size: 0.5em; font-style: normal; color: var(--muted); font-weight: 400; }
 .back-link { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* Series navigation on the last slide: back to the list, previous and next deck in one row */
+.series-nav { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin-top: 4px; }
+.series-nav .back-link { align-self: center; }
+.series-nav a:not(.btn) {
+  flex: 1 1 200px; max-width: 320px; display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  padding: 5px 12px; border-radius: 10px; border: 1.5px solid var(--line);
+  background: var(--panel); color: var(--ink); text-decoration: none; font-size: 0.88em;
+}
+.series-nav a:not(.btn):hover { border-color: var(--accent); background: var(--accent-soft); }
+.series-nav span { font-size: 0.8em; color: var(--muted); font-weight: 600; }
+.series-nav b { line-height: 1.25; }
+.series-nav .series-next { text-align: right; }
+.slide-inner:has(.series-nav) { gap: 0.7em; }
+.slide-inner:has(.series-nav) .points { gap: 0.4em; }
+.slide-inner:has(.series-nav) .proverb { margin-top: 0; }
+@media (max-width: 560px) {
+  .series-nav a:not(.btn) { flex-basis: 100%; max-width: none; }
+  .series-nav .back-link { order: 3; }
+}
