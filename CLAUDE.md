@@ -29,6 +29,7 @@ Content language: Russian.
 
 Single decks:
 
+- `agent-skills` — скилы в ИИ-агентах: агентный цикл и контекст, SKILL.md и фронтматтер, прогрессивное раскрытие, выбор скила по описанию, инструмент Skill и `/имя` в Claude Code, подстановки `$ARGUMENTS`/`` !`cmd` ``, скрипты, сравнение с CLAUDE.md/MCP/сабагентами/хуками, где живут скилы и открытый стандарт, безопасность, линтер описаний. Demos split into `demos.js` (slides 2–10, `window.AS` helpers) and `demos-2.js` (slides 11–18).
 - `go-channels` — горутины и каналы в Go.
 - `backend-stack` — PostgreSQL, Redis, RabbitMQ, Kafka, Elasticsearch, ClickHouse, S3: когда брать и когда нет. Tech colours via `.t-pg`, `.t-redis`, … classes.
 - `postgres-internals` — память/диск, MVCC, VACUUM, WAL, индексы, планировщик, блокировки, пулер, репликация, фейловер, бэкапы. Demos split into `demos.js` (internals) and `demos-ops.js` (operations).

@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Скилы в ИИ-агентах: как это работает — интерактивная презентация</title>
+  <meta name="description" content="Агентный цикл и контекстное окно, SKILL.md, прогрессивное раскрытие, как модель выбирает скил, инструмент Skill в Claude Code, скрипты, безопасность и как писать хорошие скилы.">
+  <meta name="theme-color" content="#f2f5f7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="/assets/base.css">
+  <link rel="stylesheet" href="/assets/deck.css">
+  <link rel="stylesheet" href="/assets/kit.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="deck">
+<div class="slides">
+
+<!-- 1 -->
+<section class="slide" aria-label="Титульный слайд">
+  <div class="slide-inner title-slide">
+    <div class="hero-ctx" aria-hidden="true">
+      <div class="hc-win">
+        <div class="hc-label">контекстное окно</div>
+        <div class="hc-row sys">системный промпт · инструменты</div>
+        <div class="hc-list"><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><span>name + description × 40</span></div>
+        <div class="hc-row user">«Заполни w9.pdf»</div>
+        <div class="hc-row skill">pdf-forms/SKILL.md</div>
+        <div class="hc-free"></div>
+      </div>
+      <div class="hc-disk">
+        <div class="hc-label">на диске</div>
+        <div class="hc-file">forms.md</div>
+        <div class="hc-file">reference.md</div>
+        <div class="hc-file run">scripts/fill.py ▶</div>
+      </div>
+    </div>
+    <div class="stack">
+      <h1>Скилы в ИИ-агентах</h1>
+      <p class="lead">Как агент вроде Claude Code узнаёт о сотне инструкций, но держит в контексте только нужную. Что такое <code>SKILL.md</code>, как модель решает его загрузить, что при этом попадает в разговор и как написать скил, который срабатывает.</p>
+      <p class="note">Листайте стрелками ← →, свайпом или кнопками внизу. В схемах нажимайте кнопки и двигайте ползунки.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Агент — это цикл</h2>
+      <p class="lead">Модель не «помнит» ничего между вызовами. Агент — это программа, которая каждый раз отправляет модели весь разговор, получает ответ, выполняет запрошенный инструмент и дописывает результат в разговор.</p>
+      <ul class="points">
+        <li>Контекстное окно — единственная память. Что не попало в него, модель не знает.</li>
+        <li>Каждый шаг заново обрабатывает весь контекст: системный промпт, описания инструментов, историю.</li>
+        <li>Окно конечно: 200 тыс. токенов у большинства моделей Claude, до 1 млн у некоторых.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="loop"></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Почему не положить всё в системный промпт</h2>
+      <p class="lead">У команды десятки регламентов: как писать миграции, как оформлять релиз, как разбирать инцидент. Положить их все в системный промпт или <code>CLAUDE.md</code> — значит платить за них на каждом шаге и размывать внимание модели посторонним текстом.</p>
+      <ul class="points">
+        <li><b>Длинный промпт</b> — всё и всегда; кэш снижает цену, но не занятое место.</li>
+        <li><b>RAG</b> — поиск кусков по похожести; инструкцию, разрезанную на куски, легко собрать не целиком.</li>
+        <li><b>Инструменты и MCP</b> — дают действия и доступ, но не знание, <i>как</i> делать задачу.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="stuff"></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Скил — это папка</h2>
+      <p class="lead">Обязателен один файл, <code>SKILL.md</code>: YAML-фронтматтер с именем и описанием и markdown-инструкции. Рядом — что угодно: справочники, шаблоны, скрипты. Агент читает их с диска сам, когда инструкции на них ссылаются.</p>
+<pre class="code"><code class="lang-plain">
+pdf-forms/
+├── SKILL.md         # метаданные + инструкции
+├── forms.md         # читается по ссылке
+├── reference.md     # 600 строк про pdfplumber
+├── assets/
+│   └── w9-fields.json
+└── scripts/
+    ├── analyze_form.py  # запускается
+    └── fill_form.py
+</code></pre>
+      <p class="note">Стандарт (agentskills.io) советует папки <code>scripts/</code>, <code>references/</code>, <code>assets/</code>, но не требует их.</p>
+    </div>
+<pre class="code"><code class="lang-plain">
+---
+name: pdf-forms
+description: Заполняет PDF-формы и извлекает
+  из PDF текст и таблицы. Используй, когда
+  пользователь упоминает PDF, анкету, бланк
+  или форму, даже без слова «PDF».
+---
+
+# PDF: формы и извлечение
+
+## Извлечь текст
+Используй pdfplumber:
+    with pdfplumber.open(path) as pdf:
+        text = pdf.pages[0].extract_text()
+
+## Заполнить форму
+1. `python scripts/analyze_form.py in.pdf`
+   → JSON с полями формы
+2. Сопоставь поля с данными пользователя.
+3. `python scripts/fill_form.py in.pdf f.json out.pdf`
+Подводные камни — в [forms.md](forms.md).
+</code></pre>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Фронтматтер: что в нём бывает</h2>
+    <div class="fm-cols">
+      <div class="fm-col">
+        <span class="tech">Открытый стандарт</span>
+        <dl class="fm">
+          <dt>name</dt><dd>до 64 символов: <code>a-z</code>, <code>0-9</code>, дефис; совпадает с именем папки</dd>
+          <dt>description</dt><dd>до 1024 символов: что делает и когда применять</dd>
+          <dt>license, compatibility, metadata</dt><dd>лицензия, требования к окружению (до 500 символов), произвольные ключи</dd>
+          <dt>allowed-tools</dt><dd>заранее одобренные инструменты; помечено экспериментальным</dd>
+        </dl>
+        <p class="note">API и claude.ai: <code>name</code> и <code>description</code> обязательны, без XML-тегов, имя не может содержать «anthropic» и «claude».</p>
+      </div>
+      <div class="fm-col">
+        <span class="tech dark">Только Claude Code</span>
+        <dl class="fm">
+          <dt>when_to_use</dt><dd>дописывается к описанию; вместе обрезаются до 1536 символов</dd>
+          <dt>disable-model-invocation</dt><dd><code>true</code> — только ручной вызов <code>/имя</code>, описание не попадает в контекст</dd>
+          <dt>user-invocable</dt><dd><code>false</code> — скрыть из меню <code>/</code>, вызывает только модель</dd>
+          <dt>argument-hint, arguments</dt><dd>подсказка и имена аргументов для <code>$name</code></dd>
+          <dt>context: fork, agent</dt><dd>выполнить скил в сабагенте с отдельным контекстом</dd>
+          <dt>paths, model, effort, hooks, disallowed-tools</dt><dd>автоактивация по glob, модель, усилие, хуки, запрет инструментов</dd>
+        </dl>
+        <p class="note">В Claude Code все поля необязательны: имя по умолчанию — имя папки. Неизвестные поля молча игнорируются.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Прогрессивное раскрытие</h2>
+      <p class="lead">Скил грузится в контекст по уровням, и каждый следующий — только если нужен.</p>
+      <ol class="points lv">
+        <li><b>Метаданные</b>, ~100 токенов на скил: имя и описание всех скилов всегда в контексте.</li>
+        <li><b>Тело <code>SKILL.md</code></b>, рекомендуют до 5 тыс. токенов и 500 строк: читается, когда скил выбран.</li>
+        <li><b>Остальные файлы</b>: справочник читается, только если на него сослались; скрипт запускается, и в контекст попадает лишь его вывод.</li>
+      </ol>
+      <p class="note">Выберите запрос и проходите по шагам. Следите, какие файлы остаются на диске.</p>
+    </div>
+    <div class="demo" data-demo="disclosure"></div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Сто скилов в одном окне</h2>
+      <p class="lead">Из-за уровней стоимость скила, который не используют, — только его описание. Поэтому скилов можно держать десятки, а регламентов в системном промпте — нет.</p>
+      <p class="note">Двигайте ползунки и сравните, сколько контекста занимают те же знания в двух подходах.</p>
+      <p class="note">Описания всё же не бесплатны: Claude Code отводит списку скилов около 1% окна и при переполнении выбрасывает описания у редко вызываемых скилов — остаются одни имена. Посмотреть стоимость: <code>/context</code> и <code>/skill-doctor</code>.</p>
+    </div>
+    <div class="demo" data-demo="calc"></div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Кто выбирает скил</h2>
+      <p class="lead">Ни роутера, ни эмбеддингов, ни поиска по словам. Список описаний лежит в контексте, и модель сама решает, подходит ли какое-то к задаче. Описание — всё, что она знает о скиле до загрузки.</p>
+      <ul class="points">
+        <li>В описании две части: что делает и когда применять.</li>
+        <li>Слова, которыми говорит пользователь: «анкета», «прод лежит», «changelog».</li>
+        <li>Третье лицо: описание вставляется в системный промпт.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="pick"></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Задачка: скил не срабатывает</h2>
+      <p class="lead">В проекте 60 скилов. Вы добавили <code>deploy-staging</code> с описанием «Деплой». На просьбу «выкати ветку на стенд» агент запускает <code>kubectl</code> наугад и скил не трогает. Что поможет вернее всего?</p>
+    </div>
+    <div class="quiz" data-demo="quiz">
+      <button class="opt text">Поставить в фронтматтере <code>priority: high</code></button>
+      <button class="opt text">Переписать тело <code>SKILL.md</code> подробнее, с примерами команд</button>
+      <button class="opt text" data-correct>Переписать описание: что делает и когда применять, со словами «стенд», «staging», «выкати ветку»</button>
+      <button class="opt text">Перенести скил выше в списке: модель читает сверху вниз</button>
+      <div class="explain">Поля приоритета нет ни в стандарте, ни в Claude Code (неизвестные поля молча игнорируются). Тело до выбора скила модель вообще не видит. Решение принимается по описанию, а «Деплой» не связан ни со «стендом», ни с «выкати». Ещё проверьте, что описание не выброшено из-за бюджета списка: спросите «What skills are available?» или посмотрите <code>/context</code>. Если скил нужен только по команде — <code>disable-model-invocation: true</code> и вызов <code>/deploy-staging</code>.</div>
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Что происходит в разговоре</h2>
+      <p class="lead">В Claude Code у модели есть инструмент <code>Skill</code>. Вызов с именем скила подставляет содержимое <code>SKILL.md</code> в разговор отдельным сообщением, и оно остаётся там до конца сессии. Через API и в claude.ai отдельного инструмента нет: модель читает файл командой <code>cat</code> в контейнере.</p>
+      <p class="note">Выберите способ вызова и листайте сообщения. Справа — сколько токенов добавил каждый шаг.</p>
+    </div>
+    <div class="demo" data-demo="trace"></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Аргументы и подстановки</h2>
+      <p class="lead">До того как текст скила попадёт к модели, Claude Code его рендерит: подставляет аргументы и выполняет команды из <code>!`…`</code>. Модель видит уже результат — вывод <code>git</code>, а не просьбу его запустить.</p>
+      <ul class="points">
+        <li><code>$ARGUMENTS</code> — вся строка, <code>$0</code>, <code>$1</code>… — по позиции (с нуля).</li>
+        <li>Нет плейсхолдера — Claude Code допишет <code>ARGUMENTS: …</code> в конец.</li>
+        <li>Команда упала — весь вызов скила прерывается; терпимость — <code>|| true</code>.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="render"></div>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Скрипты: код вместо генерации</h2>
+      <p class="lead">Отсортировать список, проверить 40 полей формы, посчитать контрольную сумму — это дёшево и надёжно сделать кодом и дорого и ненадёжно — генерацией токенов. Скрипт в скиле пишут один раз и тестируют; модель его только запускает.</p>
+      <ul class="points">
+        <li>Пишите в инструкции явно: «запусти» или «прочитай как пример».</li>
+        <li>Скрипту нужен исполнитель: Bash в Claude Code, code execution tool в API.</li>
+        <li>Окружение разное: в API контейнер без сети и без установки пакетов, в claude.ai сеть зависит от настроек, в Claude Code — ваша машина целиком.</li>
+      </ul>
+    </div>
+    <div class="demo" data-demo="exec"></div>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Жизнь скила в контексте</h2>
+      <ul class="points">
+        <li>Загруженный <code>SKILL.md</code> — одно сообщение в разговоре. Claude Code не перечитывает файл: правки вступят в силу при следующем вызове.</li>
+        <li>Повторный вызов с тем же содержимым добавляет короткую пометку «уже загружен», а не вторую копию.</li>
+        <li>При сжатии контекста (compaction) Claude Code снова прикладывает последние вызванные скилы: первые 5000 токенов каждого, всего не больше 25&nbsp;000 токенов, начиная с самых свежих.</li>
+        <li>Правило, которое должно выполняться всегда, — в хук, а не в текст скила.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <p class="lead qz-q">Скил на 12&nbsp;000 токенов, в самом конце — «никогда не правь файлы в <code>migrations/</code>». Через час работы контекст сжали, и агент поправил миграцию. Почему?</p>
+      <div class="quiz" data-demo="quiz">
+        <button class="opt text">Модель «устала» от длинной сессии и перестала слушаться</button>
+        <button class="opt text" data-correct>После сжатия от скила осталось начало — первые 5000 токенов, правило из конца пропало</button>
+        <button class="opt text">Claude Code перечитал <code>SKILL.md</code> с диска, а там уже другая версия</button>
+        <button class="opt text">Сжатие удаляет все скилы целиком</button>
+        <div class="explain">После compaction скил возвращается в контекст, но обрезанным до первых 5000 токенов. Важное — в начало файла, детали — в отдельные файлы, а запрет на запись в <code>migrations/</code> надёжнее сделать хуком <code>PreToolUse</code>: хук срабатывает на каждой правке, следует модель скилу или нет. Можно и просто вызвать скил ещё раз.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Скил, CLAUDE.md, MCP, сабагент или хук</h2>
+    <p class="lead">Механизмы не соперничают, а дополняют друг друга. Различаются тем, когда текст попадает в контекст и кто решает его применить. Выберите задачу.</p>
+    <div class="demo" data-demo="which"></div>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Где живут скилы</h2>
+    <div class="where">
+      <div class="wh-col">
+        <h3>Claude Code</h3>
+        <ul class="wh-list">
+          <li><code>~/.claude/skills/&lt;имя&gt;/</code> <span>личные, во всех проектах</span></li>
+          <li><code>.claude/skills/&lt;имя&gt;/</code> <span>проектные, коммитятся в репозиторий</span></li>
+          <li><code>sub/.claude/skills/</code> <span>вложенные: подгружаются, когда агент заходит в <code>sub/</code></span></li>
+          <li><code>&lt;плагин&gt;/skills/</code> <span>из плагина, вызов <code>/плагин:имя</code></span></li>
+          <li>managed settings <span>корпоративные</span></li>
+        </ul>
+        <p class="note">При совпадении имён: корпоративный &gt; личный &gt; проектный. Изменения в папках подхватываются без перезапуска.</p>
+      </div>
+      <div class="wh-col">
+        <h3>API и claude.ai</h3>
+        <ul class="wh-list">
+          <li>API <span>загрузка через <code>/v1/skills</code>, доступны всему workspace; в запросе — <code>container.skills</code> (до 20) и code execution tool</span></li>
+          <li>claude.ai <span>zip в настройках, только для своего аккаунта; нужен code execution</span></li>
+          <li>Готовые <span><code>pptx</code>, <code>xlsx</code>, <code>docx</code>, <code>pdf</code> — в API и claude.ai, в Claude Code их нет</span></li>
+        </ul>
+        <p class="note">Поверхности не синхронизируются. Исключение из свежих версий Claude Code: при входе через аккаунт claude.ai его скилы скачиваются в <code>~/.claude/skills/synced/</code> — только в одну сторону.</p>
+      </div>
+      <div class="wh-col">
+        <h3>Открытый стандарт</h3>
+        <p>Формат придумали в Anthropic (октябрь 2025) и в декабре 2025 опубликовали как открытый стандарт на <a href="https://agentskills.io" rel="noopener">agentskills.io</a>.</p>
+        <p class="wh-who">Поддерживают: OpenAI Codex, Cursor, Gemini CLI, GitHub Copilot и VS Code, JetBrains Junie, OpenCode, Goose, Amp, Roo Code, Kiro, OpenHands и другие.</p>
+        <p class="note">Общая часть — папка, <code>SKILL.md</code>, <code>name</code> и <code>description</code>. Пути, способ вызова и дополнительные поля у каждого агента свои.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Скил — это код, который запустят</h2>
+      <p class="lead">Чужой скил — то же самое, что чужой пакет из npm с post-install-скриптом, только инструкции к нему читает модель с вашими правами. Документация Anthropic: ставить только из доверенных источников, остальное — читать целиком перед установкой.</p>
+      <ul class="points">
+        <li>Проверяйте все файлы: скрипты, справочники, даже картинки.</li>
+        <li>Ссылки на внешние URL опасны вдвойне: содержимое по ним может измениться после вашей проверки.</li>
+      </ul>
+      <p class="note">Найдите в скиле всё подозрительное: нажимайте на строки.</p>
+    </div>
+    <div class="demo" data-demo="audit"></div>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Права: что разрешает скил</h2>
+      <ul class="points">
+        <li><code>allowed-tools</code> в Claude Code — это разрешение без вопроса, пока выполняется вызвавший скил ход. Других инструментов оно не ограничивает.</li>
+        <li>Убрать инструменты, пока скил активен, — <code>disallowed-tools</code>.</li>
+        <li>Запретить сам скил — правило разрешений <code>Skill(имя)</code>; все скилы — запретить <code>Skill</code>.</li>
+        <li>Политика <code>disableSkillShellExecution</code> отключает команды <code>!`…`</code> в скилах.</li>
+        <li>В стандарте <code>allowed-tools</code> экспериментальное: другие агенты могут понимать его иначе или игнорировать.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <p class="lead qz-q">В скиле <code>allowed-tools: Read Grep</code>. По его инструкции модель хочет выполнить <code>rm -rf build/</code>. Что сделает Claude Code в обычном режиме?</p>
+      <div class="quiz" data-demo="quiz">
+        <button class="opt text">Заблокирует: Bash не в списке разрешённых</button>
+        <button class="opt text">Выполнит без вопроса: скил уже одобрен</button>
+        <button class="opt text" data-correct>Спросит разрешение, как для любой команды, не одобренной заранее</button>
+        <button class="opt text">Не загрузит скил: в нём противоречие</button>
+        <div class="explain"><code>allowed-tools</code> — список «можно без вопроса», а не белый список. Bash остаётся доступным и проходит обычную проверку разрешений: в интерактивном режиме — вопрос пользователю. Чтобы скил не мог запускать Bash вовсе, нужен <code>disallowed-tools: Bash</code> или запрещающее правило в настройках.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <div class="slide-inner split">
+    <div class="stack">
+      <h2>Как написать описание</h2>
+      <ul class="points">
+        <li>Что делает + когда применять: «Используй, когда…».</li>
+        <li>Конкретика: форматы файлов, инструменты, слова пользователя.</li>
+        <li>Третье лицо: «Заполняет формы», а не «Я помогу заполнить».</li>
+        <li>Главное — в начале: длинный список могут обрезать.</li>
+        <li>Имя: строчные буквы, цифры, дефис; лучше <code>processing-pdfs</code>, чем <code>helper</code>.</li>
+      </ul>
+      <p class="note">Правьте описание или выберите пример — проверка идёт по правилам стандарта и рекомендациям Anthropic.</p>
+    </div>
+    <div class="demo" data-demo="lint"></div>
+  </div>
+</section>
+
+<!-- 19 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Как написать тело и довести скил до ума</h2>
+    <div class="fit">
+      <div class="fit-col yes">
+        <h3>Делайте</h3>
+        <ul>
+          <li>Пишите только то, чего модель не знает: ваши таблицы, правила, команды. «Что такое PDF» она знает.</li>
+          <li>Узкий мост — точная команда; открытое поле — общие принципы. Степень свободы по хрупкости задачи.</li>
+          <li>Ссылки на файлы — на один уровень от <code>SKILL.md</code>; у длинных справочников — оглавление.</li>
+          <li>Сначала прогоните агента на 3 реальных задачах без скила, запишите провалы, потом пишите минимум, который их чинит.</li>
+          <li>Смотрите, как агент ходит по файлам: что читает, что пропускает. Правьте по наблюдениям.</li>
+        </ul>
+      </div>
+      <div class="fit-col no">
+        <h3>Не делайте</h3>
+        <ul>
+          <li>Пять библиотек на выбор. <span class="alt">Одна по умолчанию и запасной вариант</span></li>
+          <li>Цепочки ссылок <code>SKILL.md → a.md → b.md</code>. <span class="alt">Агент может прочитать вложенный файл частично (head)</span></li>
+          <li>«До августа делай так, после — иначе». <span class="alt">Раздел «устаревшее»</span></li>
+          <li>Скрипт, который падает и «пусть модель разбирается». <span class="alt">Обработка ошибок и понятные сообщения</span></li>
+          <li>Пути с <code>\</code> и магические константы без объяснения.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 20 -->
+<section class="slide">
+  <div class="slide-inner split even">
+    <div class="stack">
+      <h2>Первый скил за 5 минут</h2>
+      <p class="lead">Пример из документации Claude Code: скил, который сам смотрит <code>git diff</code> и описывает изменения. Имени в фронтматтере нет — возьмётся имя папки.</p>
+<pre class="code"><code class="lang-plain">
+---
+description: Summarizes uncommitted changes and flags
+  anything risky. Use when the user asks what changed,
+  wants a commit message, or asks to review their diff.
+---
+
+## Current changes
+
+!`git diff HEAD`
+
+## Instructions
+
+Summarize the changes above in two or three bullet
+points, then list any risks you notice. If the diff
+is empty, say there are no uncommitted changes.
+</code></pre>
+    </div>
+<pre class="code"><code class="lang-plain">
+# 1. папка и файл (слева)
+mkdir -p ~/.claude/skills/summarize-changes
+$EDITOR ~/.claude/skills/summarize-changes/SKILL.md
+
+# 2. проверить в Claude Code
+/skills                    # есть ли в списке
+What did I change?         # должен сработать сам
+/summarize-changes         # явный вызов
+
+# 3. если не срабатывает
+claude --debug             # ошибка разбора YAML
+claude plugin validate ~/.claude/skills
+/context                   # размер списка скилов
+/skill-doctor              # цена и неиспользуемые
+
+# стандарт: валидатор для любого агента
+skills-ref validate ./summarize-changes
+</code></pre>
+  </div>
+</section>
+
+<!-- 21 -->
+<section class="slide">
+  <div class="slide-inner">
+    <h2>Главное</h2>
+    <ul class="points summary">
+      <li>Агент — цикл вокруг модели, контекст — его единственная память, и каждый токен в нём оплачивается на каждом шаге.</li>
+      <li>Скил — папка с <code>SKILL.md</code>. В контексте всегда только имя и описание; тело — когда скил выбран; файлы и скрипты — по мере надобности.</li>
+      <li>Выбирает сама модель, читая описания. Описание со словами «что» и «когда» — главное поле скила.</li>
+      <li>В Claude Code скил вызывается инструментом <code>Skill</code> или <code>/имя</code>, рендерится с аргументами и выводом команд и остаётся в разговоре.</li>
+      <li>Детерминированную работу — в скрипты; правила «всегда» — в хуки; доступ к системам — в MCP; объёмный поиск — в сабагент.</li>
+      <li>Скил — это код с вашими правами. Только из доверенных источников и после чтения.</li>
+    </ul>
+    <p class="proverb">Хороший скил похож на памятку для нового сотрудника: коротко, по делу и со ссылками на подробности.</p>
+    <p><a class="btn primary back-link" href="/">К списку презентаций</a></p>
+  </div>
+</section>
+
+</div>
+</div>
+<script src="/assets/deck.js"></script>
+<script src="demos.js"></script>
+<script src="demos-2.js"></script>
+</body>
+</html>
